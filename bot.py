@@ -1,6 +1,5 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 
@@ -18,7 +17,6 @@ active_chats = set()
 async def risk_loop(chat_id: int):
     while chat_id in active_chats:
         for symbol in SYMBOLS:
-            # Инициализация значений по умолчанию
             funding = 0
             long_ratio = 0
             oi = 0
@@ -45,12 +43,10 @@ async def risk_loop(chat_id: int):
                 except Exception as e:
                     await bot.send_message(chat_id, f"{symbol}: liquidations недоступны ({e})")
 
-                # Рассчёт изменения OI
                 prev_oi = last_oi.get(symbol, oi)
                 oi_change = oi - prev_oi
                 last_oi[symbol] = oi
 
-                # Риск
                 score, direction, reasons = calculate_risk(
                     funding=funding,
                     long_ratio=long_ratio,
@@ -67,7 +63,6 @@ async def risk_loop(chat_id: int):
                     await bot.send_message(chat_id, text)
 
             except Exception as e:
-                # Если что-то совсем неожиданное
                 await bot.send_message(chat_id, f"Ошибка при обработке {symbol}: {e}")
 
         await asyncio.sleep(INTERVAL_SECONDS)
@@ -82,7 +77,6 @@ async def start_handler(message: types.Message):
     )
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
-        # Первая проверка сразу
         asyncio.create_task(risk_loop(message.chat.id))
 
 
@@ -103,21 +97,24 @@ def run_ping_server():
     server.serve_forever()
 
 
-# Запуск сервера в отдельном потоке
 threading.Thread(target=run_ping_server, daemon=True).start()
 
 
 # -----------------------------
-# Сброс старых updates перед polling
+# Основной entrypoint
 # -----------------------------
-async def reset_updates():
+async def main():
+    # Сбрасываем старые updates
     try:
         await bot.get_updates(offset=-1)
         print("Старые updates сброшены")
     except Exception as e:
         print(f"Не удалось сбросить старые updates: {e}")
 
+    # Запуск polling
+    await dp.start_polling(skip_updates=True)
+
 
 if __name__ == "__main__":
-    asyncio.run(reset_updates())
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
+
