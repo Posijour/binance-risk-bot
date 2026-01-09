@@ -82,7 +82,7 @@ async def start_handler(message: types.Message):
 
 
 # -----------------------------
-# Встроенный HTTP-сервер для пинга UptimeRobot
+# Ping server
 # -----------------------------
 class PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -98,20 +98,22 @@ def run_ping_server():
     server.serve_forever()
 
 
-# Запуск ping-сервера в отдельном потоке
 threading.Thread(target=run_ping_server, daemon=True).start()
 
 
 # -----------------------------
-# Основной entrypoint
+# MAIN
 # -----------------------------
 if __name__ == "__main__":
-    # Сбрасываем старые updates перед запуском polling
+    # Сбрасываем старые updates
     try:
         asyncio.run(bot.get_updates(offset=-1))
         print("Старые updates сброшены")
     except Exception as e:
         print(f"Не удалось сбросить старые updates: {e}")
 
-    # Запуск polling aiogram 2.25.x
+    # Создаём event loop вручную для aiogram 2.x на Python 3.11
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     executor.start_polling(dp, skip_updates=True)
