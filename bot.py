@@ -91,6 +91,10 @@ class PingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'Bot is alive!')
 
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
 
 def run_ping_server():
     server = HTTPServer(('0.0.0.0', 8080), PingHandler)
@@ -117,3 +121,4 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
 
     executor.start_polling(dp, skip_updates=True)
+
