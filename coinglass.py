@@ -1,3 +1,4 @@
+import time
 import requests
 from config import COINGLASS_API_KEY
 
@@ -9,37 +10,65 @@ HEADERS = {
 }
 
 
-def _get(endpoint: str, params: dict):
-    r = requests.get(
-        f"{BASE_URL}/{endpoint}",
-        headers=HEADERS,
-        params=params,
-        timeout=10
-    )
-    r.raise_for_status()
-    return r.json()["data"]
+def _get(endpoint: str, params: dict, retries=3, delay=2):
+    """
+    Универсальная функция запроса к Coinglass API с повторными попытками
+    при 500 ошибках и паузой delay секунд.
+    """
+    for attempt in range(retries):
+        try:
+            r = requests.get(
+                f"{BASE_URL}/{endpoint}",
+                headers=HEADERS,
+                params=params,
+                timeout=10
+            )
+            r.raise_for_status()
+            data = r.json().get("data")
+            if data is None:
+                # API вернул пустой объект
+                return []
+            return data
+        except requests.HTTPError as e:
+            # если ошибка сервера (5xx), повторяем
+            if r.status_code >= 500:
+                time.sleep(delay)
+                continue
+            else:
+                raise
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                raise
+    raise Exception(f"Failed to fetch {endpoint} after {retries} attempts")
 
 
 def get_funding_rate(symbol: str) -> float:
     data = _get("funding_rate", {"symbol": symbol})
-    return sum(x["fundingRate"] for x in data) / len(data)
+    if not data:
+        return 0
+    return sum(x.get("fundingRate", 0) for x in data) / len(data)
 
 
 def get_long_short_ratio(symbol: str) -> float:
     data = _get("global_long_short_account_ratio", {"symbol": symbol})
+    if not data:
+        return 0
     latest = data[-1]
-    return float(latest["longRatio"])
+    return float(latest.get("longRatio", 0))
 
 
 def get_open_interest(symbol: str) -> float:
     data = _get("open_interest", {"symbol": symbol})
-    return sum(float(x["openInterest"]) for x in data)
+    if not data:
+        return 0
+    return sum(float(x.get("openInterest", 0)) for x in data)
 
 
 def get_liquidations(symbol: str) -> float:
-    data = _get(
-        "liquidation_chart",
-        {"symbol": symbol, "interval": "5m"}
-    )
+    data = _get("liquidation_chart", {"symbol": symbol, "interval": "5m"})
+    if not data:
+        return 0
     latest = data[-1]
-    return float(latest["longLiquidation"]) + float(latest["shortLiquidation"])
+    return float(latest.get("longLiquidation", 0)) + float(latest.get("shortLiquidation", 0))
