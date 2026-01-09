@@ -18,17 +18,39 @@ active_chats = set()
 async def risk_loop(chat_id: int):
     while chat_id in active_chats:
         for symbol in SYMBOLS:
-            try:
-                # Синхронные функции безопасно для aiogram 2.x
-                funding = get_funding_rate(symbol)
-                long_ratio = get_long_short_ratio(symbol)
-                oi = get_open_interest(symbol)
-                liquidations = get_liquidations(symbol)
+            # Инициализация значений по умолчанию
+            funding = 0
+            long_ratio = 0
+            oi = 0
+            liquidations = 0
 
+            try:
+                try:
+                    funding = get_funding_rate(symbol)
+                except Exception as e:
+                    await bot.send_message(chat_id, f"{symbol}: funding_rate недоступен ({e})")
+
+                try:
+                    long_ratio = get_long_short_ratio(symbol)
+                except Exception as e:
+                    await bot.send_message(chat_id, f"{symbol}: long_short_ratio недоступен ({e})")
+
+                try:
+                    oi = get_open_interest(symbol)
+                except Exception as e:
+                    await bot.send_message(chat_id, f"{symbol}: open_interest недоступен ({e})")
+
+                try:
+                    liquidations = get_liquidations(symbol)
+                except Exception as e:
+                    await bot.send_message(chat_id, f"{symbol}: liquidations недоступны ({e})")
+
+                # Рассчёт изменения OI
                 prev_oi = last_oi.get(symbol, oi)
                 oi_change = oi - prev_oi
                 last_oi[symbol] = oi
 
+                # Риск
                 score, direction, reasons = calculate_risk(
                     funding=funding,
                     long_ratio=long_ratio,
@@ -45,6 +67,7 @@ async def risk_loop(chat_id: int):
                     await bot.send_message(chat_id, text)
 
             except Exception as e:
+                # Если что-то совсем неожиданное
                 await bot.send_message(chat_id, f"Ошибка при обработке {symbol}: {e}")
 
         await asyncio.sleep(INTERVAL_SECONDS)
@@ -61,15 +84,6 @@ async def start_handler(message: types.Message):
         active_chats.add(message.chat.id)
         # Первая проверка сразу
         asyncio.create_task(risk_loop(message.chat.id))
-
-
-# -----------------------------
-# Авто-отправка первой проверки при старте бота
-# -----------------------------
-async def send_initial_risk():
-    await asyncio.sleep(5)  # ждем, чтобы бот стартанул
-    for chat_id in active_chats:
-        asyncio.create_task(risk_loop(chat_id))
 
 
 # -----------------------------
@@ -94,6 +108,4 @@ threading.Thread(target=run_ping_server, daemon=True).start()
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(send_initial_risk())
     executor.start_polling(dp, skip_updates=True)
