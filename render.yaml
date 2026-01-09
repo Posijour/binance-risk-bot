@@ -1,8 +1,8 @@
 services:
   - type: web
     name: coinglass-risk-bot
-    env: python
-    buildCommand: pip install --no-cache-dir -r requirements.txt
+    env: docker
+    buildCommand: echo "Build complete"
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
