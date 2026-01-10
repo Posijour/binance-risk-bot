@@ -2,7 +2,7 @@ import requests
 import time
 from config import COINGLASS_API_KEY
 
-BASE_URL = "https://open-api.coinglass.com/api/pro/v1"
+BASE_URL = "https://open-api-v4.coinglass.com"
 
 HEADERS = {
     "accept": "application/json",
@@ -121,6 +121,7 @@ def get_liquidations(symbol: str) -> float:
     short_liq = float(data.get("shortLiquidation", 0))
 
     return long_liq + short_liq
+
 
 
 
