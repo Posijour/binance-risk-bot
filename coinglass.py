@@ -1,75 +1,126 @@
 import requests
+import time
 from config import COINGLASS_API_KEY
 
 BASE_URL = "https://open-api.coinglass.com/api/pro/v1"
 
 HEADERS = {
     "accept": "application/json",
-    "coinglassSecret": COINGLASS_API_KEY
+    "CG-API-KEY": COINGLASS_API_KEY
 }
 
+TIMEOUT = 10
+RETRIES = 3
+RETRY_SLEEP = 1.5
 
-def _get(endpoint: str, params: dict):
-    r = requests.get(
-        f"{BASE_URL}/{endpoint}",
-        headers=HEADERS,
-        params=params,
-        timeout=10
-    )
-
-    if r.status_code != 200:
-        raise Exception(f"{endpoint} error {r.status_code}: {r.text}")
-
-    return r.json()["data"]
+EXCHANGE = "Binance"
 
 
-def _base_symbol(symbol: str) -> str:
-    # BTCUSDT -> BTC
-    return symbol.replace("USDT", "")
+class CoinglassError(Exception):
+    pass
 
 
-def get_funding_rate(symbol="BTCUSDT_PERP"):
-    data = _get(
+def _request(endpoint: str, params: dict):
+    url = f"{BASE_URL}/{endpoint}"
+
+    last_error = None
+
+    for attempt in range(1, RETRIES + 1):
+        try:
+            r = requests.get(
+                url,
+                headers=HEADERS,
+                params=params,
+                timeout=TIMEOUT
+            )
+
+            if r.status_code != 200:
+                raise CoinglassError(
+                    f"{endpoint} error {r.status_code}: {r.text}"
+                )
+
+            data = r.json()
+
+            # Coinglass иногда возвращает success=false с 200
+            if isinstance(data, dict) and data.get("success") is False:
+                raise CoinglassError(
+                    f"{endpoint} logical error: {data}"
+                )
+
+            return data.get("data")
+
+        except Exception as e:
+            last_error = e
+            if attempt < RETRIES:
+                time.sleep(RETRY_SLEEP)
+            else:
+                raise last_error
+
+
+# -----------------------------
+# FUNDING RATE
+# -----------------------------
+def get_funding_rate(symbol: str) -> float:
+    data = _request(
         "futures/funding-rate",
         {
-            "symbolId": symbol,
-            "exchange": "binance"
+            "symbol": symbol,
+            "exchange": EXCHANGE
         }
     )
+
+    # PRO API возвращает объект, не список
     return float(data["fundingRate"])
 
 
-def get_long_short_ratio(symbol="BTCUSDT_PERP"):
-    data = _get(
+# -----------------------------
+# LONG / SHORT RATIO
+# -----------------------------
+def get_long_short_ratio(symbol: str) -> float:
+    data = _request(
         "futures/long-short-ratio",
         {
-            "symbolId": symbol,
-            "exchange": "binance",
+            "symbol": symbol,
+            "exchange": EXCHANGE,
             "interval": "5m"
         }
     )
+
     return float(data["longRatio"])
 
 
-def get_open_interest(symbol="BTCUSDT_PERP"):
-    data = _get(
+# -----------------------------
+# OPEN INTEREST
+# -----------------------------
+def get_open_interest(symbol: str) -> float:
+    data = _request(
         "futures/open-interest",
         {
-            "symbolId": symbol,
-            "exchange": "binance"
+            "symbol": symbol,
+            "exchange": EXCHANGE
         }
     )
+
     return float(data["openInterest"])
 
 
-def get_liquidations(symbol="BTCUSDT_PERP"):
-    data = _get(
+# -----------------------------
+# LIQUIDATIONS
+# -----------------------------
+def get_liquidations(symbol: str) -> float:
+    data = _request(
         "futures/liquidation",
         {
-            "symbolId": symbol,
-            "exchange": "binance",
+            "symbol": symbol,
+            "exchange": EXCHANGE,
             "interval": "5m"
         }
     )
-    return float(data["longLiquidation"]) + float(data["shortLiquidation"])
+
+    long_liq = float(data.get("longLiquidation", 0))
+    short_liq = float(data.get("shortLiquidation", 0))
+
+    return long_liq + short_liq
+
+
 
