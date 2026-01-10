@@ -1,7 +1,7 @@
 import requests
 from config import COINGLASS_API_KEY
 
-BASE_URL = "https://open-api.coinglass.com/public/v3"
+BASE_URL = "https://open-api.coinglass.com/api/pro/v1"
 
 HEADERS = {
     "accept": "application/json",
@@ -28,59 +28,39 @@ def _base_symbol(symbol: str) -> str:
     return symbol.replace("USDT", "")
 
 
-# ---------- FUNDING RATE ----------
-def get_funding_rate(symbol: str, exchange="Binance") -> float:
+def get_funding_rate(symbol="BTCUSDT_PERP"):
     data = _get(
-        "funding-rate",
-        {
-            "symbol": symbol,
-            "exchange": exchange
-        }
+        "futures/funding-rate",
+        {"symbolId": symbol}
     )
-    return float(data[0]["fundingRate"])
+    return float(data["fundingRate"])
 
 
-# ---------- LONG / SHORT RATIO ----------
-def get_long_short_ratio(symbol: str, exchange="Binance") -> float:
+def get_long_short_ratio(symbol="BTCUSDT_PERP"):
     data = _get(
-        "global-long-short-account-ratio",
+        "futures/long-short-ratio",
         {
-            "symbol": symbol,
-            "exchange": exchange,
+            "symbolId": symbol,
             "interval": "5m"
         }
     )
-    return float(data[-1]["longRatio"])
+    return float(data["longRatio"])
 
 
-# ---------- OPEN INTEREST ----------
-def get_open_interest(symbol: str) -> float:
-    base = _base_symbol(symbol)
-
+def get_open_interest(symbol="BTCUSDT_PERP"):
     data = _get(
-        "open_interest",
-        {
-            "symbol": base,
-            "exchange": "Binance"
-        }
+        "futures/open-interest",
+        {"symbolId": symbol}
     )
-
-    if not data:
-        raise RuntimeError("empty open_interest data")
-
-    return sum(float(x["openInterest"]) for x in data)
+    return float(data["openInterest"])
 
 
-# ---------- LIQUIDATIONS ----------
-def get_liquidations(symbol: str, exchange="Binance") -> float:
+def get_liquidations(symbol="BTCUSDT_PERP"):
     data = _get(
-        "liquidation",
+        "futures/liquidation",
         {
-            "symbol": symbol,
-            "exchange": exchange,
+            "symbolId": symbol,
             "interval": "5m"
         }
     )
-    last = data[-1]
-    return float(last["longLiquidation"]) + float(last["shortLiquidation"])
-
+    return float(data["longLiquidation"]) + float(data["shortLiquidation"])
