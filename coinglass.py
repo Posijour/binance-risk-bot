@@ -31,7 +31,10 @@ def _base_symbol(symbol: str) -> str:
 def get_funding_rate(symbol="BTCUSDT_PERP"):
     data = _get(
         "futures/funding-rate",
-        {"symbolId": symbol}
+        {
+            "symbolId": symbol,
+            "exchange": "binance"
+        }
     )
     return float(data["fundingRate"])
 
@@ -41,6 +44,7 @@ def get_long_short_ratio(symbol="BTCUSDT_PERP"):
         "futures/long-short-ratio",
         {
             "symbolId": symbol,
+            "exchange": "binance",
             "interval": "5m"
         }
     )
@@ -50,7 +54,10 @@ def get_long_short_ratio(symbol="BTCUSDT_PERP"):
 def get_open_interest(symbol="BTCUSDT_PERP"):
     data = _get(
         "futures/open-interest",
-        {"symbolId": symbol}
+        {
+            "symbolId": symbol,
+            "exchange": "binance"
+        }
     )
     return float(data["openInterest"])
 
@@ -60,7 +67,9 @@ def get_liquidations(symbol="BTCUSDT_PERP"):
         "futures/liquidation",
         {
             "symbolId": symbol,
+            "exchange": "binance",
             "interval": "5m"
         }
     )
     return float(data["longLiquidation"]) + float(data["shortLiquidation"])
+
