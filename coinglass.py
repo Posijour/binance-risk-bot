@@ -10,42 +10,37 @@ HEADERS = {
 }
 
 
-def _get(endpoint: str, params: dict, retries=3, delay=2):
-    """
-    Универсальная функция запроса к Coinglass API с повторными попытками
-    при 500 ошибках и паузой delay секунд.
-    """
-    for attempt in range(retries):
-        try:
-            r = requests.get(
-                f"{BASE_URL}/{endpoint}",
-                headers=HEADERS,
-                params=params,
-                timeout=10
-            )
-            r.raise_for_status()
-            data = r.json().get("data")
-            if data is None:
-                # API вернул пустой объект
-                return []
-            return data
-        except requests.HTTPError as e:
-            # если ошибка сервера (5xx), повторяем
-            if r.status_code >= 500:
-                time.sleep(delay)
-                continue
-            else:
-                raise
-        except Exception:
-            if attempt < retries - 1:
-                time.sleep(delay)
-            else:
-                raise
-    raise Exception(f"Failed to fetch {endpoint} after {retries} attempts")
+def _get(endpoint: str, params: dict):
+    r = requests.get(
+        f"{BASE_URL}/{endpoint}",
+        headers=HEADERS,
+        params=params,
+        timeout=15
+    )
+
+    if r.status_code != 200:
+        raise RuntimeError(
+            f"{endpoint} error {r.status_code}: {r.text}"
+        )
+
+    payload = r.json()
+
+    if payload.get("success") is not True:
+        raise RuntimeError(
+            f"{endpoint} failed: {payload}"
+        )
+
+    return payload["data"]
 
 
+def _base_symbol(symbol: str) -> str:
+    # BTCUSDT -> BTC
+    return symbol.replace("USDT", "")
+
+
+# ---------- FUNDING RATE ----------
 def get_funding_rate(symbol: str) -> float:
-    base = symbol.replace("USDT", "")
+    base = _base_symbol(symbol)
 
     data = _get(
         "funding_rate",
@@ -54,11 +49,16 @@ def get_funding_rate(symbol: str) -> float:
             "exchange": "Binance"
         }
     )
+
+    if not data:
+        raise RuntimeError("empty funding_rate data")
+
     return sum(float(x["fundingRate"]) for x in data) / len(data)
 
 
+# ---------- LONG / SHORT RATIO ----------
 def get_long_short_ratio(symbol: str) -> float:
-    base = symbol.replace("USDT", "")
+    base = _base_symbol(symbol)
 
     data = _get(
         "global_long_short_account_ratio",
@@ -68,21 +68,45 @@ def get_long_short_ratio(symbol: str) -> float:
         }
     )
 
-    latest = data[-1]
-    return float(latest["longRatio"])
+    if not data:
+        raise RuntimeError("empty long_short_ratio data")
+
+    return float(data[-1]["longRatio"])
 
 
+# ---------- OPEN INTEREST ----------
 def get_open_interest(symbol: str) -> float:
-    data = _get("open_interest", {"symbol": symbol})
+    base = _base_symbol(symbol)
+
+    data = _get(
+        "open_interest",
+        {
+            "symbol": base,
+            "exchange": "Binance"
+        }
+    )
+
     if not data:
-        return 0
-    return sum(float(x.get("openInterest", 0)) for x in data)
+        raise RuntimeError("empty open_interest data")
+
+    return sum(float(x["openInterest"]) for x in data)
 
 
+# ---------- LIQUIDATIONS ----------
 def get_liquidations(symbol: str) -> float:
-    data = _get("liquidation_chart", {"symbol": symbol, "interval": "5m"})
-    if not data:
-        return 0
-    latest = data[-1]
-    return float(latest.get("longLiquidation", 0)) + float(latest.get("shortLiquidation", 0))
+    base = _base_symbol(symbol)
 
+    data = _get(
+        "liquidation_chart",
+        {
+            "symbol": base,
+            "exchange": "Binance",
+            "interval": "5m"
+        }
+    )
+
+    if not data:
+        raise RuntimeError("empty liquidation data")
+
+    last = data[-1]
+    return float(last["longLiquidation"]) + float(last["shortLiquidation"])
