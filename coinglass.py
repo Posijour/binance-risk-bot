@@ -1,4 +1,3 @@
-import time
 import requests
 from config import COINGLASS_API_KEY
 
@@ -10,17 +9,10 @@ HEADERS = {
 }
 
 EXCHANGE = "BINANCE"
-TIME_WINDOW_MINUTES = 60
 
 
 class CoinGlassError(Exception):
     pass
-
-
-def _time_range():
-    end = int(time.time() * 1000)
-    start = end - TIME_WINDOW_MINUTES * 60 * 1000
-    return start, end
 
 
 def _request(path: str, params: dict):
@@ -42,36 +34,26 @@ def _request(path: str, params: dict):
 
 
 def get_funding_rate(symbol: str) -> float:
-    start, end = _time_range()
-
     data = _request(
-        "/futures/funding-rate/history",
+        "/futures/funding-rate",
         {
             "symbol": symbol,
             "exchange": EXCHANGE,
-            "startTime": start,
-            "endTime": end,
         },
     )
-
-    return float(data[-1]["fundingRate"])
+    return float(data["fundingRate"])
 
 
 def get_long_short_ratio(symbol: str) -> float:
-    start, end = _time_range()
-
     data = _request(
-        "/futures/global-long-short-account-ratio/history",
+        "/futures/global-long-short-account-ratio",
         {
             "symbol": symbol,
-            "startTime": start,
-            "endTime": end,
         },
     )
 
-    last = data[-1]
-    long = float(last["longAccount"])
-    short = float(last["shortAccount"])
+    long = float(data["longAccount"])
+    short = float(data["shortAccount"])
 
     if short == 0:
         raise CoinGlassError("shortAccount is zero")
@@ -80,35 +62,25 @@ def get_long_short_ratio(symbol: str) -> float:
 
 
 def get_open_interest(symbol: str) -> float:
-    start, end = _time_range()
-
     data = _request(
-        "/futures/open-interest/history",
+        "/futures/open-interest",
         {
             "symbol": symbol,
             "exchange": EXCHANGE,
-            "startTime": start,
-            "endTime": end,
         },
     )
-
-    return float(data[-1]["openInterest"])
+    return float(data["openInterest"])
 
 
 def get_liquidations(symbol: str) -> float:
-    start, end = _time_range()
-
     data = _request(
-        "/futures/liquidation/aggregated-history",
+        "/futures/liquidation",
         {
             "symbol": symbol,
             "exchange_list": EXCHANGE,
-            "startTime": start,
-            "endTime": end,
         },
     )
 
-    last = data[-1]
-    return float(last.get("longLiquidation", 0)) + float(
-        last.get("shortLiquidation", 0)
+    return float(data.get("longLiquidation", 0)) + float(
+        data.get("shortLiquidation", 0)
     )
