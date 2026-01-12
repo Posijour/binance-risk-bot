@@ -2,18 +2,12 @@ import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-SYMBOLS = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-]
+SYMBOLS = ["BTCUSDT"]
 
-INTERVAL_SECONDS = 300
-# ---- Risk alert levels ----
-EARLY_ALERT_LEVEL = 4   # раннее предупреждение
-HARD_ALERT_LEVEL = 6    # жесткий риск
+INTERVAL_SECONDS = 300  # НЕ МЕНЬШЕ 60
 
-# ---- Spike thresholds ----
-FUNDING_SPIKE_THRESHOLD = 0.015   # резкое изменение funding
-OI_SPIKE_PERCENT = 0.05            # +5% OI за интервал
-OI_SPIKE_THRESHOLD = 0.03          # 3% изменения OI
+EARLY_ALERT_LEVEL = 4
+HARD_ALERT_LEVEL = 6
+
+FUNDING_SPIKE_DELTA = 0.003   # 0.3%
+OI_SPIKE_DELTA = 0.03         # 3%
