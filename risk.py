@@ -30,26 +30,23 @@ def calculate_risk(
         direction = "SHORT"
         reasons.append("Перекос в шорты")
 
-    if oi_change < 0:
-        score += 1
-        reasons.append("OI падает")
-
     if oi_change > 0:
         score += 1
         reasons.append("OI растёт")
 
-    if liquidations > 50_000_000:
+    if oi_change < 0:
+        score += 1
+        reasons.append("OI падает")
+
+    if liquidations > 30_000_000:
         score += 2
-        reasons.append("Аномальные ликвидации")
+        reasons.append("Крупные ликвидации")
 
     funding_spike = (
         prev_funding is not None
         and abs(funding - prev_funding) > 0.003
     )
 
-    oi_spike = abs(oi_change) / oi > 0.03 if oi else False
+    oi_spike = oi > 0 and abs(oi_change) / oi > 0.03
 
     return score, direction, reasons, funding_spike, oi_spike
-
-    return score, direction, reasons
-
