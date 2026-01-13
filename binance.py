@@ -36,6 +36,7 @@ def get_open_interest(symbol: str) -> float:
 
 
 def get_liquidations(symbol: str) -> float:
+    return 0
     data = _get(
         "/futures/data/liqHist",
         {"symbol": symbol, "limit": 1}
@@ -44,3 +45,4 @@ def get_liquidations(symbol: str) -> float:
         raise BinanceError("empty liquidation data")
     row = data[0]
     return float(row["longVol"]) + float(row["shortVol"])
+
