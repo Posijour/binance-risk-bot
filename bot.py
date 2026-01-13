@@ -33,13 +33,15 @@ async def risk_loop(chat_id: int):
     await asyncio.sleep(3)
 
     while chat_id in active_chats:
-        had_any_attempt = False
+        cycle_had_data = False
 
         for symbol in SYMBOLS:
             try:
-                had_any_attempt = True
-
                 funding = await call(get_funding_rate, symbol)
+                if funding is None:
+                    print(f"[BINANCE] {symbol}: empty funding data")
+                    continue
+
                 long_ratio = await call(get_long_short_ratio, symbol)
                 oi = await call(get_open_interest, symbol)
                 liquidations = await call(get_liquidations, symbol)
@@ -61,6 +63,7 @@ async def risk_loop(chat_id: int):
                 )
 
                 cache[symbol] = (score, direction, reasons)
+                cycle_had_data = True
 
                 if funding_spike:
                     await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
@@ -88,7 +91,7 @@ async def risk_loop(chat_id: int):
             except Exception as e:
                 print(f"[ERROR] {symbol}: {e}")
 
-        if had_any_attempt:
+        if cycle_had_data:
             last_update_ts = int(time.time())
 
         await asyncio.sleep(INTERVAL_SECONDS)
@@ -107,9 +110,8 @@ async def start(message: types.Message):
         reply_markup=kb
     )
 
-    # временное состояние до первого цикла
     for symbol in SYMBOLS:
-        cache[symbol] = (0, None, ["Идёт первый расчёт"])
+        cache[symbol] = (0, None, ["Ожидание данных от Binance"])
 
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
@@ -118,12 +120,13 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "risk")
 async def current_risk(call: types.CallbackQuery):
-    lines = []
+    if not cache:
+        await call.message.answer("⏳ Данных пока нет")
+        return
 
+    lines = []
     for symbol, (score, direction, _) in cache.items():
-        lines.append(
-            f"{symbol}: {score} ({direction or 'NEUTRAL'})"
-        )
+        lines.append(f"{symbol}: {score} ({direction or 'NEUTRAL'})")
 
     ts = time.strftime("%H:%M:%S", time.localtime(last_update_ts)) if last_update_ts else "—"
     lines.append(f"\n🕒 Обновлено: {ts}")
@@ -150,5 +153,4 @@ threading.Thread(
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
-
 
