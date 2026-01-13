@@ -21,20 +21,16 @@ active_chats = set()
 last_oi = {}
 last_funding = {}
 
-# cache ВСЕГДА должен быть непустым
 cache = {}
-cache_ready = False
 last_update_ts = None
 
 
 async def risk_loop(chat_id: int):
-    global cache_ready, last_update_ts
+    global last_update_ts
 
     await asyncio.sleep(3)
 
     while chat_id in active_chats:
-        any_success = False
-
         for symbol in SYMBOLS:
             try:
                 funding = await call(get_funding_rate, symbol)
@@ -58,9 +54,9 @@ async def risk_loop(chat_id: int):
                     liquidations
                 )
 
-                # 🔴 КЛЮЧЕВОЕ МЕСТО: cache обновляется ВСЕГДА
+                # 🔴 ВСЕГДА обновляем cache
                 cache[symbol] = (score, direction, reasons)
-                any_success = True
+                last_update_ts = int(time.time())
 
                 if funding_spike:
                     await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
@@ -88,10 +84,6 @@ async def risk_loop(chat_id: int):
             except Exception as e:
                 print(f"[ERROR] {symbol}: {e}")
 
-        if any_success:
-            cache_ready = True
-            last_update_ts = int(time.time())
-
         await asyncio.sleep(INTERVAL_SECONDS)
 
 
@@ -108,9 +100,9 @@ async def start(message: types.Message):
         reply_markup=kb
     )
 
-    # 🔴 ПУНКТ 1: cache заполняется СРАЗУ
+    # 🔴 WAIT — только временно, до первого цикла
     for symbol in SYMBOLS:
-        cache[symbol] = (0, "WAIT", ["Данные загружаются"])
+        cache[symbol] = (0, None, ["Идёт первый расчёт"])
 
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
@@ -119,11 +111,8 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "risk")
 async def current_risk(call: types.CallbackQuery):
-    if not cache:
-        await call.message.answer("Нет данных")
-        return
-
     lines = []
+
     for symbol, (score, direction, _) in cache.items():
         lines.append(
             f"{symbol}: {score} ({direction or 'NEUTRAL'})"
