@@ -9,6 +9,7 @@ import threading
 from config import *
 from binance import *
 from risk import calculate_risk
+
 async def call(fn, *args):
     return await asyncio.to_thread(fn, *args)
 
@@ -19,6 +20,8 @@ active_chats = set()
 
 last_oi = {}
 last_funding = {}
+
+# cache ВСЕГДА должен быть непустым
 cache = {}
 cache_ready = False
 last_update_ts = None
@@ -55,6 +58,7 @@ async def risk_loop(chat_id: int):
                     liquidations
                 )
 
+                # 🔴 КЛЮЧЕВОЕ МЕСТО: cache обновляется ВСЕГДА
                 cache[symbol] = (score, direction, reasons)
                 any_success = True
 
@@ -104,6 +108,10 @@ async def start(message: types.Message):
         reply_markup=kb
     )
 
+    # 🔴 ПУНКТ 1: cache заполняется СРАЗУ
+    for symbol in SYMBOLS:
+        cache[symbol] = (0, "WAIT", ["Данные загружаются"])
+
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
         asyncio.create_task(risk_loop(message.chat.id))
@@ -111,8 +119,8 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "risk")
 async def current_risk(call: types.CallbackQuery):
-    if not cache_ready:
-        await call.message.answer("⏳ Данные ещё собираются")
+    if not cache:
+        await call.message.answer("Нет данных")
         return
 
     lines = []
@@ -146,4 +154,3 @@ threading.Thread(
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
-
