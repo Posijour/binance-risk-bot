@@ -1,4 +1,5 @@
 import asyncio
+import time
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
@@ -13,18 +14,22 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 active_chats = set()
+
 last_oi = {}
 last_funding = {}
 cache = {}
-cache_ready = False  # ⬅️ флаг готовности данных
+cache_ready = False
+last_update_ts = None
 
 
 async def risk_loop(chat_id: int):
-    await asyncio.sleep(5)  # небольшая пауза после /start
+    global cache_ready, last_update_ts
 
-    global cache_ready
+    await asyncio.sleep(3)
 
     while chat_id in active_chats:
+        any_success = False
+
         for symbol in SYMBOLS:
             try:
                 funding = get_funding_rate(symbol)
@@ -48,9 +53,8 @@ async def risk_loop(chat_id: int):
                     liquidations
                 )
 
-                # обновляем cache каждый цикл
                 cache[symbol] = (score, direction, reasons)
-                cache_ready = True  # ⬅️ как только пошёл цикл — данные точно есть
+                any_success = True
 
                 if funding_spike:
                     await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
@@ -60,22 +64,27 @@ async def risk_loop(chat_id: int):
 
                 if score >= HARD_ALERT_LEVEL and direction:
                     prefix = "🚨 HARD RISK ALERT"
-                elif score >= EARLY_ALERT_LEVEL and direction:
-                    prefix = "⚠️ EARLY WARNING"
+                elif score >= EARLY_ALERT_LEVEL:
+                    prefix = "⚠️ RISK BUILDUP"
                 else:
                     continue
 
                 text = (
-                    f"{prefix} {symbol} ({direction})\n\n"
-                    f"Risk score: {score}\n\n"
+                    f"{prefix} {symbol}\n\n"
+                    f"Risk score: {score}\n"
+                    f"Direction: {direction or 'NEUTRAL'}\n\n"
                     + "\n".join(f"- {r}" for r in reasons)
                 )
                 await bot.send_message(chat_id, text)
 
-            except BinanceError:
-                pass  # бинанс иногда истерит, мы — нет
+            except BinanceError as e:
+                print(f"[BINANCE] {symbol}: {e}")
             except Exception as e:
-                print("ERROR:", e)
+                print(f"[ERROR] {symbol}: {e}")
+
+        if any_success:
+            cache_ready = True
+            last_update_ts = int(time.time())
 
         await asyncio.sleep(INTERVAL_SECONDS)
 
@@ -95,49 +104,23 @@ async def start(message: types.Message):
 
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
-
-        # 🔹 первичное заполнение cache
-        global cache_ready
-        cache_ready = False
-
-        for symbol in SYMBOLS:
-            try:
-                funding = get_funding_rate(symbol)
-                long_ratio = get_long_short_ratio(symbol)
-                oi = get_open_interest(symbol)
-                liquidations = get_liquidations(symbol)
-
-                score, direction, reasons, *_ = calculate_risk(
-                    funding,
-                    None,
-                    long_ratio,
-                    0,
-                    oi,
-                    liquidations
-                )
-
-                cache[symbol] = (score, direction, reasons)
-                cache_ready = True
-            except Exception:
-                pass
-
         asyncio.create_task(risk_loop(message.chat.id))
 
 
 @dp.callback_query_handler(lambda c: c.data == "risk")
 async def current_risk(call: types.CallbackQuery):
     if not cache_ready:
-        await call.message.answer("⏳ Данные загружаются, попробуй через пару секунд")
-        return
-
-    if not cache:
-        await call.message.answer("Нет данных")
+        await call.message.answer("⏳ Данные ещё собираются")
         return
 
     lines = []
     for symbol, (score, direction, _) in cache.items():
-        dir_text = direction or "NEUTRAL"
-        lines.append(f"{symbol}: {score} ({dir_text})")
+        lines.append(
+            f"{symbol}: {score} ({direction or 'NEUTRAL'})"
+        )
+
+    ts = time.strftime("%H:%M:%S", time.localtime(last_update_ts)) if last_update_ts else "—"
+    lines.append(f"\n🕒 Обновлено: {ts}")
 
     await call.message.answer("\n".join(lines))
 
