@@ -19,6 +19,7 @@ from ws_binance import (
 )
 
 print("[BOOT] bot starting")
+print("=== BOT FILE LOADED ===", flush=True)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -116,3 +117,4 @@ if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     threading.Thread(target=start_ws, daemon=True).start()
     executor.start_polling(dp, skip_updates=True)
+
