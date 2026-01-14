@@ -37,7 +37,9 @@ async def risk_loop(chat_id: int):
                 ls = long_short_ratio.get(symbol)
                 liq = liquidations.get(symbol, 0)
 
+                # 🔹 если данных ещё мало — всё равно пишем в cache
                 if f is None or oi is None or ls is None:
+                    cache[symbol] = (0, None, ["Данные собираются"])
                     continue
 
                 long_ratio = ls["long"] / max(ls["long"] + ls["short"], 1)
@@ -58,10 +60,9 @@ async def risk_loop(chat_id: int):
                     liq
                 )
 
+                # ✅ CACHE ОБНОВЛЯЕТСЯ ВСЕГДА
                 cache[symbol] = (score, direction, reasons)
-                last_update_ts = int(time.time())
-                print(f"[CACHE] updated {symbol} at {last_update_ts}")
-
+                print(f"[CACHE] updated {symbol} at {last_update.get(symbol)}")
 
                 if funding_spike:
                     await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
@@ -142,4 +143,5 @@ async def on_startup(dp):
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
