@@ -113,14 +113,14 @@ class PingHandler(BaseHTTPRequestHandler):
 def start_http():
     HTTPServer(("0.0.0.0", 8080), PingHandler).serve_forever()
 
+def do_HEAD(self):
+    self.send_response(200)
+    self.end_headers()
+
 async def on_startup(dp):
     print("[BOOT] bot starting")
     await bot.delete_webhook(drop_pending_updates=True)
     asyncio.create_task(binance_ws())
-
-def do_HEAD(self):
-    self.send_response(200)
-    self.end_headers()
 
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
@@ -130,4 +130,5 @@ if __name__ == "__main__":
     skip_updates=True,
     on_startup=on_startup
     )
+
 
