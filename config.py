@@ -1,5 +1,3 @@
-import os
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 SYMBOLS = [
@@ -16,7 +14,3 @@ HARD_ALERT_LEVEL = 6
 
 FUNDING_SPIKE_DELTA = 0.003   # 0.3%
 OI_SPIKE_DELTA = 0.03         # 3%
-
-
-
-
