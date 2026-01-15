@@ -22,6 +22,7 @@ async def binance_ws():
         s = s.lower()
         streams += [
             f"{s}@markPrice@1s",
+            f"{s}@openInterest@1s",
             f"{s}@aggTrade",
             f"{s}@forceOrder"
         ]
@@ -52,6 +53,10 @@ async def binance_ws():
                         liquidations[symbol] = liquidations.get(symbol, 0) + qty
                         touch(symbol)
 
+                    elif "openInterest" in stream:
+                        open_interest[symbol] = float(data["oi"])
+                        touch(symbol)
+
                     elif "aggTrade" in stream:
                         ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
                         if data["m"]:
@@ -70,6 +75,7 @@ def start_ws():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(binance_ws())
+
 
 
 
