@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 
 from config import *
+from risk import calculate_risk
 from ws_binance import (
     funding,
     open_interest,
@@ -17,8 +18,7 @@ from ws_binance import (
     binance_ws
 )
 
-print("[BOOT] bot starting")
-print("=== BOT FILE LOADED ===", flush=True)
+print("[BOOT] bot starting", flush=True)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -30,49 +30,63 @@ cache = {}
 
 
 async def risk_loop(chat_id: int):
-    print(f"[RISK LOOP] started for chat {chat_id}", flush=True)
     await asyncio.sleep(5)
 
     while chat_id in active_chats:
-        print("[RISK LOOP] tick", flush=True)
-
         for symbol in SYMBOLS:
             try:
                 f = funding.get(symbol)
-                oi = open_interest.get(symbol)
-                ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
-                liq = liquidations.get(symbol, 0)
-
-                print(
-                    f"[DEBUG] {symbol} "
-                    f"funding={f} "
-                    f"oi={oi} "
-                    f"ls={ls}",
-                    flush=True
-                )
-
                 if f is None:
                     continue
-                
-                oi = oi or 0
-                ls = ls or {"long": 0, "short": 0}
 
-                print(
-                    f"[RISK DATA] {symbol} f={f} oi={oi} long={ls['long']} short={ls['short']}",
-                    flush=True
+                oi = open_interest.get(symbol) or 0
+                ls = long_short_ratio.get(symbol) or {"long": 0, "short": 0}
+                liq = liquidations.get(symbol, 0)
+
+                long_ratio = ls["long"] / max(ls["long"] + ls["short"], 1)
+
+                prev_oi = last_oi.get(symbol, oi)
+                oi_change = oi - prev_oi
+                last_oi[symbol] = oi
+
+                prev_funding = last_funding.get(symbol)
+                last_funding[symbol] = f
+
+                score, direction, reasons, funding_spike, oi_spike = calculate_risk(
+                    f,
+                    prev_funding,
+                    long_ratio,
+                    oi_change,
+                    oi,
+                    liq
                 )
 
-                # ===== ВРЕМЕННАЯ ЗАГЛУШКА ВМЕСТО calculate_risk =====
-                score = 1
-                direction = "DEBUG"
-                reasons = ["debug mode"]
-
                 cache[symbol] = (score, direction, reasons)
-                print(f"[CACHE] updated {symbol}", flush=True)
 
-            except Exception:
-                import traceback
-                traceback.print_exc()
+                if funding_spike:
+                    await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
+
+                if oi_spike:
+                    await bot.send_message(chat_id, f"💥 {symbol} OI SPIKE")
+
+                if score >= HARD_ALERT_LEVEL and direction:
+                    prefix = "🚨 HARD RISK ALERT"
+                elif score >= EARLY_ALERT_LEVEL:
+                    prefix = "⚠️ RISK BUILDUP"
+                else:
+                    continue
+
+                text = (
+                    f"{prefix} {symbol}\n\n"
+                    f"Risk score: {score}\n"
+                    f"Direction: {direction}\n\n"
+                    + "\n".join(f"- {r}" for r in reasons)
+                )
+
+                await bot.send_message(chat_id, text)
+
+            except Exception as e:
+                print("[BOT ERROR]", e, flush=True)
 
         await asyncio.sleep(INTERVAL_SECONDS)
 
@@ -84,11 +98,12 @@ async def start(message: types.Message):
     )
 
     await message.reply(
-        "Я слежу за Binance Futures.\nПишу только когда реально опасно.",
+        "Я слежу за Binance Futures.\n"
+        "Пишу только когда реально опасно.\n\n"
+        "Тишина = рынок обычный.",
         reply_markup=kb
     )
 
-    # прогрев кэша
     for s in SYMBOLS:
         cache[s] = (0, None, ["Идёт прогрев данных"])
 
@@ -128,7 +143,6 @@ def start_http():
 
 
 async def on_startup(dp):
-    print("[BOOT] on_startup", flush=True)
     await bot.delete_webhook(drop_pending_updates=True)
     asyncio.create_task(binance_ws())
 
@@ -141,8 +155,3 @@ if __name__ == "__main__":
         skip_updates=True,
         on_startup=on_startup
     )
-
-
-
-
-
