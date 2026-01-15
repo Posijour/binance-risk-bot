@@ -39,7 +39,7 @@ async def risk_loop(chat_id: int):
             try:
                 f = funding.get(symbol)
                 oi = open_interest.get(symbol, 0)
-                ls = long_short_ratio.get(symbol)
+                ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
                 liq = liquidations.get(symbol, 0)
 
                 if f is None or oi is None or ls is None:
@@ -64,6 +64,11 @@ async def risk_loop(chat_id: int):
                     oi,
                     liq
                 )
+                
+                print(
+                    f"[RISK] {symbol} f={f} long={ls['long']} short={ls['short']}",
+                    flush=True
+                )
 
                 cache[symbol] = (score, direction, reasons)
                 print(f"[CACHE] updated {symbol}")
@@ -85,6 +90,9 @@ async def start(message: types.Message):
         reply_markup=kb
     )
 
+    for s in SYMBOLS:
+        cache[s] = (0, None, ["Идёт прогрев данных"])
+        
     if message.chat.id not in active_chats:
         active_chats.add(message.chat.id)
         asyncio.create_task(risk_loop(message.chat.id))
@@ -130,4 +138,5 @@ if __name__ == "__main__":
     skip_updates=True,
     on_startup=on_startup
     )
+
 
