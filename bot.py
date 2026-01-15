@@ -40,7 +40,7 @@ async def risk_loop(chat_id: int):
             try:
                 f = funding.get(symbol)
                 oi = open_interest.get(symbol)
-                ls = long_short_ratio.get(symbol)
+                ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
                 liq = liquidations.get(symbol, 0)
 
                 print(
@@ -51,8 +51,16 @@ async def risk_loop(chat_id: int):
                     flush=True
                 )
 
-                if f is None or oi is None or ls is None:
+                if f is None:
                     continue
+                
+                oi = oi or 0
+                ls = ls or {"long": 0, "short": 0}
+
+                print(
+                    f"[RISK DATA] {symbol} f={f} oi={oi} long={ls['long']} short={ls['short']}",
+                    flush=True
+                )
 
                 # ===== ВРЕМЕННАЯ ЗАГЛУШКА ВМЕСТО calculate_risk =====
                 score = 1
@@ -133,6 +141,7 @@ if __name__ == "__main__":
         skip_updates=True,
         on_startup=on_startup
     )
+
 
 
 
