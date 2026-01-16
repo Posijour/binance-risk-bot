@@ -22,12 +22,22 @@ def calculate_risk(
         reasons.append("Funding экстремально отрицательный")
 
     # LONG / SHORT
-    if long_ratio > 0.7:
+    if long_ratio > 0.85:
+        score += 3
+        direction_votes["LONG"] += 2
+        reasons.append("Экстремальный перекос в лонги")
+    
+    elif long_ratio > 0.7:
         score += 2
         direction_votes["LONG"] += 1
         reasons.append("Перекос в лонги")
-
-    if long_ratio < 0.3:
+    
+    if long_ratio < 0.15:
+        score += 3
+        direction_votes["SHORT"] += 2
+        reasons.append("Экстремальный перекос в шорты")
+    
+    elif long_ratio < 0.3:
         score += 2
         direction_votes["SHORT"] += 1
         reasons.append("Перекос в шорты")
@@ -64,3 +74,4 @@ def calculate_risk(
         direction = max(direction_votes, key=direction_votes.get)
 
     return score, direction, reasons, funding_spike, oi_spike
+
