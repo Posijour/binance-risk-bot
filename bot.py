@@ -132,9 +132,18 @@ async def current_risk(call: types.CallbackQuery):
 
 class PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path in ("/", "/health"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_HEAD(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"OK")
 
 
 def start_http():
@@ -149,3 +158,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
