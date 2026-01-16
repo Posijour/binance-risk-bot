@@ -2,43 +2,55 @@ def calculate_risk(
     funding,
     prev_funding,
     long_ratio,
-    oi_change,
-    oi,
-    liquidations
+    oi_window,
+    liquidations,
+    liq_threshold
 ):
     score = 0
     reasons = []
-    direction = None
+    direction_votes = {"LONG": 0, "SHORT": 0}
 
+    # FUNDING
     if funding > 0.02:
         score += 2
-        direction = "LONG"
+        direction_votes["LONG"] += 1
         reasons.append("Funding экстремально положительный")
 
     if funding < -0.02:
         score += 2
-        direction = "SHORT"
+        direction_votes["SHORT"] += 1
         reasons.append("Funding экстремально отрицательный")
 
+    # LONG / SHORT
     if long_ratio > 0.7:
         score += 2
-        direction = "LONG"
+        direction_votes["LONG"] += 1
         reasons.append("Перекос в лонги")
 
     if long_ratio < 0.3:
         score += 2
-        direction = "SHORT"
+        direction_votes["SHORT"] += 1
         reasons.append("Перекос в шорты")
 
-    if oi_change > 0:
-        score += 1
-        reasons.append("OI растёт")
+    # OI TREND + SPIKE
+    oi_spike = False
+    if len(oi_window) >= 2:
+        oi_start = oi_window[0][1]
+        oi_end = oi_window[-1][1]
+        change_pct = abs(oi_end - oi_start) / oi_start if oi_start else 0
 
-    if oi_change < 0:
-        score += 1
-        reasons.append("OI падает")
+        if oi_end > oi_start:
+            score += 1
+            reasons.append("OI растёт")
+        elif oi_end < oi_start:
+            score += 1
+            reasons.append("OI падает")
 
-    if liquidations > 30_000_000:
+        if change_pct > 0.03:
+            oi_spike = True
+
+    # LIQUIDATIONS
+    if liquidations > liq_threshold:
         score += 2
         reasons.append("Крупные ликвидации")
 
@@ -47,6 +59,8 @@ def calculate_risk(
         and abs(funding - prev_funding) > 0.003
     )
 
-    oi_spike = oi > 0 and abs(oi_change) / oi > 0.03
+    direction = None
+    if direction_votes["LONG"] != direction_votes["SHORT"]:
+        direction = max(direction_votes, key=direction_votes.get)
 
     return score, direction, reasons, funding_spike, oi_spike
