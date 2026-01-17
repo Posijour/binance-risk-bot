@@ -29,14 +29,14 @@ last_spikes = {"funding": {}, "oi": {}}
 ws_task = None
 
 
-# -------------------- KEEPALIVE --------------------
+# ---------------- KEEPALIVE ----------------
 
 async def keepalive_loop():
     while True:
         await asyncio.sleep(30)
 
 
-# -------------------- WS WATCHDOG --------------------
+# ---------------- WS WATCHDOG ----------------
 
 async def ws_watchdog():
     global ws_task
@@ -50,7 +50,6 @@ async def ws_watchdog():
         now = time.time()
         freshest = max(last_update.values())
 
-        # если нет данных > 3 минут — WS считаем мёртвым
         if now - freshest > 180:
             if ws_task:
                 ws_task.cancel()
@@ -58,12 +57,12 @@ async def ws_watchdog():
             ws_task = asyncio.create_task(binance_ws())
 
 
-# -------------------- RISK LOOP --------------------
+# ---------------- GLOBAL RISK LOOP ----------------
 
-async def risk_loop(chat_id: int):
-    await asyncio.sleep(5)
+async def global_risk_loop():
+    await asyncio.sleep(10)
 
-    while chat_id in active_chats:
+    while True:
         for symbol in SYMBOLS:
             try:
                 f = funding.get(symbol)
@@ -89,29 +88,30 @@ async def risk_loop(chat_id: int):
                 cache[symbol] = (score, direction, reasons)
                 now = time.time()
 
-                if funding_spike and now - last_spikes["funding"].get(symbol, 0) > 900:
-                    last_spikes["funding"][symbol] = now
-                    await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
+                for chat_id in active_chats:
+                    if funding_spike and now - last_spikes["funding"].get(symbol, 0) > 900:
+                        last_spikes["funding"][symbol] = now
+                        await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
 
-                if oi_spike and now - last_spikes["oi"].get(symbol, 0) > 900:
-                    last_spikes["oi"][symbol] = now
-                    await bot.send_message(chat_id, f"💥 {symbol} OI SPIKE")
+                    if oi_spike and now - last_spikes["oi"].get(symbol, 0) > 900:
+                        last_spikes["oi"][symbol] = now
+                        await bot.send_message(chat_id, f"💥 {symbol} OI SPIKE")
 
-                if score >= HARD_ALERT_LEVEL and direction:
-                    prefix = "🚨 HARD RISK ALERT"
-                elif score >= EARLY_ALERT_LEVEL:
-                    prefix = "⚠️ RISK BUILDUP"
-                else:
-                    continue
+                    if score >= HARD_ALERT_LEVEL and direction:
+                        prefix = "🚨 HARD RISK ALERT"
+                    elif score >= EARLY_ALERT_LEVEL:
+                        prefix = "⚠️ RISK BUILDUP"
+                    else:
+                        continue
 
-                text = (
-                    f"{prefix} {symbol}\n\n"
-                    f"Risk score: {score}\n"
-                    f"Direction: {direction}\n\n"
-                    + "\n".join(f"- {r}" for r in reasons)
-                )
+                    text = (
+                        f"{prefix} {symbol}\n\n"
+                        f"Risk score: {score}\n"
+                        f"Direction: {direction}\n\n"
+                        + "\n".join(f"- {r}" for r in reasons)
+                    )
 
-                await bot.send_message(chat_id, text)
+                    await bot.send_message(chat_id, text)
 
             except Exception:
                 pass
@@ -119,7 +119,7 @@ async def risk_loop(chat_id: int):
         await asyncio.sleep(INTERVAL_SECONDS)
 
 
-# -------------------- COMMANDS --------------------
+# ---------------- COMMANDS ----------------
 
 async def send_current_risk(chat_id):
     if not cache:
@@ -137,6 +137,8 @@ async def send_current_risk(chat_id):
 
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
+    active_chats.add(message.chat.id)
+
     kb = InlineKeyboardMarkup().add(
         InlineKeyboardButton("📊 Текущий риск", callback_data="risk")
     )
@@ -147,10 +149,6 @@ async def start(message: types.Message):
         "Тишина = рынок обычный.",
         reply_markup=kb
     )
-
-    if message.chat.id not in active_chats:
-        active_chats.add(message.chat.id)
-        asyncio.create_task(risk_loop(message.chat.id))
 
 
 @dp.message_handler(commands=["risk"])
@@ -163,7 +161,7 @@ async def current_risk(call: types.CallbackQuery):
     await send_current_risk(call.message.chat.id)
 
 
-# -------------------- HEALTH --------------------
+# ---------------- HEALTH ----------------
 
 class PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -184,7 +182,7 @@ def start_http():
     HTTPServer(("0.0.0.0", 8080), PingHandler).serve_forever()
 
 
-# -------------------- STARTUP --------------------
+# ---------------- STARTUP ----------------
 
 async def on_startup(dp):
     global ws_task
@@ -192,9 +190,11 @@ async def on_startup(dp):
 
     ws_task = asyncio.create_task(binance_ws())
     asyncio.create_task(ws_watchdog())
+    asyncio.create_task(global_risk_loop())
     asyncio.create_task(keepalive_loop())
 
 
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
