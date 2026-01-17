@@ -1,4 +1,3 @@
-ws_task = None
 import asyncio
 import time
 import threading
@@ -12,7 +11,6 @@ from config import *
 from risk import calculate_risk
 from ws_binance import (
     funding,
-    open_interest,
     long_short_ratio,
     liquidations,
     last_update,
@@ -28,6 +26,18 @@ last_funding = {}
 cache = {}
 last_spikes = {"funding": {}, "oi": {}}
 
+ws_task = None
+
+
+# -------------------- KEEPALIVE --------------------
+
+async def keepalive_loop():
+    while True:
+        await asyncio.sleep(30)
+
+
+# -------------------- WS WATCHDOG --------------------
+
 async def ws_watchdog():
     global ws_task
 
@@ -40,12 +50,15 @@ async def ws_watchdog():
         now = time.time()
         freshest = max(last_update.values())
 
-        # если данных нет больше 3 минут — WS мёртв
+        # если нет данных > 3 минут — WS считаем мёртвым
         if now - freshest > 180:
             if ws_task:
                 ws_task.cancel()
 
             ws_task = asyncio.create_task(binance_ws())
+
+
+# -------------------- RISK LOOP --------------------
 
 async def risk_loop(chat_id: int):
     await asyncio.sleep(5)
@@ -74,7 +87,6 @@ async def risk_loop(chat_id: int):
                 )
 
                 cache[symbol] = (score, direction, reasons)
-
                 now = time.time()
 
                 if funding_spike and now - last_spikes["funding"].get(symbol, 0) > 900:
@@ -106,6 +118,8 @@ async def risk_loop(chat_id: int):
 
         await asyncio.sleep(INTERVAL_SECONDS)
 
+
+# -------------------- COMMANDS --------------------
 
 async def send_current_risk(chat_id):
     if not cache:
@@ -149,11 +163,12 @@ async def current_risk(call: types.CallbackQuery):
     await send_current_risk(call.message.chat.id)
 
 
+# -------------------- HEALTH --------------------
+
 class PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/health"):
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(b"OK")
         else:
@@ -169,15 +184,17 @@ def start_http():
     HTTPServer(("0.0.0.0", 8080), PingHandler).serve_forever()
 
 
+# -------------------- STARTUP --------------------
+
 async def on_startup(dp):
-    await bot.delete_webhook(drop_pending_updates=True)
     global ws_task
+    await bot.delete_webhook(drop_pending_updates=True)
+
     ws_task = asyncio.create_task(binance_ws())
     asyncio.create_task(ws_watchdog())
+    asyncio.create_task(keepalive_loop())
 
 
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
-
-
