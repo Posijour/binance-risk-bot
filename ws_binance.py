@@ -11,7 +11,6 @@ long_short_ratio = {}
 liquidations = {}
 last_update = {}
 
-# окна по времени
 trades_window = {s: deque() for s in SYMBOLS}
 liq_window = {s: deque() for s in SYMBOLS}
 oi_window = {s: deque() for s in SYMBOLS}
@@ -67,10 +66,9 @@ async def binance_ws():
 
                     elif "aggTrade" in stream:
                         qty = float(data["q"])
-                        is_maker = data["m"]
-                        trades_window[symbol].append(
-                            (now, qty, "short" if is_maker else "long")
-                        )
+                        side = "short" if data["m"] else "long"
+
+                        trades_window[symbol].append((now, qty, side))
                         cleanup_window(trades_window[symbol])
 
                         long_vol = sum(q for _, q, d in trades_window[symbol] if d == "long")
