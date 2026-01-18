@@ -17,7 +17,6 @@ dp = Dispatcher(bot)
 
 active_chats = set()
 cache = {}
-last_spikes = {"funding": {}, "oi": {}}
 prev_scores = {}
 
 last_funding = {}
@@ -113,14 +112,20 @@ async def global_risk_loop():
                     liq_sides
                 )
 
-                # cache ТОЛЬКО базовый риск
+                # -------- SPIKES → REASONS --------
+                if funding_spike:
+                    reasons.append("Funding spike detected")
+
+                if oi_spike:
+                    reasons.append("OI spike detected")
+
                 cache[symbol] = (score, direction, reasons)
 
-                # ---------- ALERT FILTERING ----------
+                # -------- ALERT FILTERING --------
 
                 quality = meta.stream_quality(symbol)
                 if quality["level"] == "LOW":
-                    continue  # SUPPRESSION при плохих данных
+                    continue
 
                 confidence = meta.calculate_confidence(
                     score,
@@ -131,6 +136,13 @@ async def global_risk_loop():
                     price,
                     liq_sides
                 )
+
+                # -------- SPIKES BOOST CONFIDENCE --------
+                if funding_spike:
+                    confidence += 1
+                if oi_spike:
+                    confidence += 1
+                confidence = min(confidence, 5)
 
                 for chat_id in active_chats:
 
@@ -169,7 +181,6 @@ async def risk_cmd(message: types.Message):
 
     parts = message.text.strip().split()
 
-    # /risk
     if len(parts) == 1:
         await send_current_risk(message.chat.id)
         return
@@ -191,6 +202,7 @@ async def risk_cmd(message: types.Message):
 
     quality = meta.stream_quality(symbol)
     state = meta.detect_state(score, False, False, liq)
+
     confidence = meta.calculate_confidence(
         score,
         direction,
@@ -206,9 +218,9 @@ async def risk_cmd(message: types.Message):
         divs = divergence.detect_divergence(
             oi_vals,
             funding,
-            ws.long_short_ratio.get(symbol, {}).get("long", 0),
-            [],
-            liq_sides
+            long_ratio=ws.long_short_ratio.get(symbol, {}).get("long", 0),
+            price_window=[],
+            liq_sides=liq_sides
         )
 
         text = (
