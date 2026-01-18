@@ -137,7 +137,6 @@ async def global_risk_loop():
                     liq_sides
                 )
 
-                # -------- SPIKES BOOST CONFIDENCE --------
                 if funding_spike:
                     confidence += 1
                 if oi_spike:
@@ -257,7 +256,7 @@ async def risk_cmd(message: types.Message):
 
     ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
     total = ls["long"] + ls["short"]
-    crowd = f"{int(ls['long'] / total * 100)}%" if total else "—"
+    pressure = f"{int(ls['long'] / total * 100)}%" if total else "—"
 
     liq_txt = f"{liq / 1_000_000:.1f}M" if liq > 0 else "—"
 
@@ -267,7 +266,7 @@ async def risk_cmd(message: types.Message):
         f"Trend: {trend}\n"
         f"Funding: {f_txt}\n"
         f"OI: {oi_txt} / {WINDOW_SECONDS // 60}m\n"
-        f"Crowd: {crowd} long\n"
+        f"Pressure: {pressure} buy\n"
         f"Liq: {liq_txt} ({WINDOW_SECONDS // 60}m)"
     )
 
@@ -311,3 +310,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
