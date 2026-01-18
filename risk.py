@@ -5,8 +5,8 @@ def calculate_risk(
     oi_window,
     liquidations,
     liq_threshold,
-    price,
-    liq_sides
+    price=None,
+    liq_sides=None
 ):
     score = 0
     reasons = []
@@ -63,8 +63,7 @@ def calculate_risk(
             reasons.append("OI падает")
 
         if oi_start > 0:
-            change_pct = abs(oi_end - oi_start) / oi_start
-            if change_pct > 0.03:
+            if abs(oi_end - oi_start) / oi_start > 0.03:
                 oi_spike = True
                 if price is not None:
                     reasons.append("OI spike при движении цены")
@@ -85,4 +84,3 @@ def calculate_risk(
         direction = max(direction_votes, key=direction_votes.get)
 
     return score, direction, reasons, funding_spike, oi_spike
-
