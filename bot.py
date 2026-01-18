@@ -162,7 +162,58 @@ def ensure_chat(chat_id):
 @dp.message_handler(commands=["risk"])
 async def risk_cmd(message: types.Message):
     ensure_chat(message.chat.id)
-    await send_current_risk(message.chat.id)
+
+    parts = message.text.strip().split()
+
+    # /risk → список всех
+    if len(parts) == 1:
+        await send_current_risk(message.chat.id)
+        return
+
+    # /risk BTCUSDT
+    symbol = parts[1].upper()
+
+    if symbol not in cache:
+        await message.reply("❌ Неизвестный символ")
+        return
+
+    score, direction, _ = cache[symbol]
+
+    prev = prev_scores.get(symbol, score)
+    trend = (
+        "rising" if score > prev else
+        "falling" if score < prev else
+        "flat"
+    )
+    prev_scores[symbol] = score
+
+    f = ws.funding.get(symbol)
+    f_txt = f"{f:+.4f}" if f is not None else "—"
+
+    oi_vals = ws.oi_window.get(symbol, [])
+    oi_txt = (
+        f"{(oi_vals[-1][1] - oi_vals[0][1]) / oi_vals[0][1] * 100:+.1f}%"
+        if len(oi_vals) >= 2 and oi_vals[0][1] > 0 else "—"
+    )
+
+    ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
+    total = ls["long"] + ls["short"]
+    crowd = f"{int(ls['long'] / total * 100)}%" if total else "—"
+
+    liq = ws.liquidations.get(symbol, 0)
+    liq_txt = f"{liq / 1_000_000:.1f}M" if liq > 0 else "—"
+
+    text = (
+        f"{symbol}\n"
+        f"Risk: {score}/10 ({direction or 'NEUTRAL'} BIAS)\n"
+        f"Trend: {trend}\n"
+        f"Funding: {f_txt}\n"
+        f"OI: {oi_txt} / {WINDOW_SECONDS // 60}m\n"
+        f"Crowd: {crowd} long\n"
+        f"Liq: {liq_txt} ({WINDOW_SECONDS // 60}m)"
+    )
+
+    await message.reply(text)
 
 
 async def send_current_risk(chat_id):
@@ -202,4 +253,3 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
-
