@@ -7,7 +7,6 @@ from config import SYMBOLS, WINDOW_SECONDS
 
 funding = {}
 mark_price = {}
-open_interest = {}
 long_short_ratio = {}
 liquidations = {}
 liq_sides = {}
@@ -91,7 +90,7 @@ async def binance_ws():
 
                         liq_sides[symbol] = {
                             "long": sum(q for _, q, s in liq_window[symbol] if s == "long"),
-                            "short": sum(q for _, q, s in liq_window[symbol] if s == "short")
+                            "short": sum(q for _, q, s in liq_window[symbol] if s == "short"),
                         }
 
                         liquidations[symbol] = (
@@ -101,3 +100,4 @@ async def binance_ws():
 
         except Exception:
             await asyncio.sleep(5)
+
