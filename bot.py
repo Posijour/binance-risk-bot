@@ -170,6 +170,12 @@ async def market_cmd(message: types.Message):
 @dp.message_handler(commands=["status"])
 async def status_cmd(message: types.Message):
     ensure_chat(message.chat.id)
+    f = funding.get(symbol)
+    oi = len(oi_window.get(symbol, []))
+    liq = liquidations.get(symbol, 0)
+    
+    lines.append(f"{symbol}: funding={f} oi_pts={oi} liq={liq}")
+
 
     if not last_update:
         await message.reply("⚠️ Нет данных от Binance WS")
@@ -291,3 +297,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
