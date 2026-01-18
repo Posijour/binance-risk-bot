@@ -22,19 +22,36 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 active_chats = set()
-last_funding = {}
 cache = {}
 last_spikes = {"funding": {}, "oi": {}}
 prev_scores = {}
+
+last_funding = {}
+last_funding_ts = {}
+last_oi_ts = {}
+last_liq_ts = {}
 
 ws_task = None
 ws_running = False
 
 
+# ---------------- WS SAFE START ----------------
+
+async def start_ws_safe():
+    global ws_running
+    if ws_running:
+        return
+    ws_running = True
+    try:
+        await binance_ws()
+    finally:
+        ws_running = False
+
+
 # ---------------- WS WATCHDOG ----------------
 
 async def ws_watchdog():
-    global ws_task, ws_running
+    global ws_task
 
     while True:
         await asyncio.sleep(60)
@@ -51,19 +68,7 @@ async def ws_watchdog():
                 except asyncio.CancelledError:
                     pass
 
-            ws_running = False
             ws_task = asyncio.create_task(start_ws_safe())
-
-
-async def start_ws_safe():
-    global ws_running
-    if ws_running:
-        return
-    ws_running = True
-    try:
-        await binance_ws()
-    finally:
-        ws_running = False
 
 
 # ---------------- GLOBAL RISK LOOP ----------------
@@ -75,36 +80,55 @@ async def global_risk_loop():
         for symbol in SYMBOLS:
             try:
                 f = funding.get(symbol)
-                if f is None:
-                    continue
+                now = time.time()
+
+                # -------- FUNDING VALIDITY --------
+                funding_valid = False
+                if f is not None:
+                    last_funding[symbol] = f
+                    last_funding_ts[symbol] = now
+                    funding_valid = True
+                elif now - last_funding_ts.get(symbol, 0) < 120:
+                    f = last_funding.get(symbol)
+                    funding_valid = True
+
+                # -------- OI VALIDITY --------
+                oi_vals = oi_window.get(symbol, [])
+                oi_valid = len(oi_vals) >= 2
+                if oi_valid:
+                    last_oi_ts[symbol] = now
+
+                # -------- LIQ VALIDITY --------
+                liq = liquidations.get(symbol, 0)
+                liq_valid = liq > 0
+                if liq_valid:
+                    last_liq_ts[symbol] = now
 
                 ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
                 total = ls["long"] + ls["short"]
                 long_ratio = ls["long"] / total if total else 0.5
 
-                prev_f = last_funding.get(symbol)
-                last_funding[symbol] = f
-
                 score, direction, reasons, funding_spike, oi_spike = calculate_risk(
-                    f,
-                    prev_f,
+                    f if funding_valid else None,
+                    None,
                     long_ratio,
-                    oi_window[symbol],
-                    liquidations.get(symbol, 0),
+                    oi_vals if oi_valid else [],
+                    liq if liq_valid else 0,
                     LIQ_THRESHOLDS[symbol]
                 )
 
                 cache[symbol] = (score, direction, reasons)
-                now = time.time()
 
-                for chat_id in list(active_chats):
-                    if funding_spike and now - last_spikes["funding"].get(symbol, 0) > 900:
-                        last_spikes["funding"][symbol] = now
-                        await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
+                for chat_id in active_chats:
+                    if funding_spike and funding_valid:
+                        if now - last_spikes["funding"].get(symbol, 0) > 900:
+                            last_spikes["funding"][symbol] = now
+                            await bot.send_message(chat_id, f"📈 {symbol} FUNDING SPIKE")
 
-                    if oi_spike and now - last_spikes["oi"].get(symbol, 0) > 900:
-                        last_spikes["oi"][symbol] = now
-                        await bot.send_message(chat_id, f"💥 {symbol} OI SPIKE")
+                    if oi_spike and oi_valid:
+                        if now - last_spikes["oi"].get(symbol, 0) > 900:
+                            last_spikes["oi"][symbol] = now
+                            await bot.send_message(chat_id, f"💥 {symbol} OI SPIKE")
 
                     if score >= HARD_ALERT_LEVEL and direction:
                         prefix = "🚨 HARD RISK ALERT"
@@ -130,68 +154,8 @@ async def global_risk_loop():
 
 # ---------------- COMMANDS ----------------
 
-def ensure_chat(chat_id: int):
+def ensure_chat(chat_id):
     active_chats.add(chat_id)
-
-
-@dp.message_handler(commands=["start"])
-async def start(message: types.Message):
-    ensure_chat(message.chat.id)
-
-    kb = InlineKeyboardMarkup().add(
-        InlineKeyboardButton("📊 Текущий риск", callback_data="risk")
-    )
-
-    await message.reply(
-        "Я слежу за Binance Futures.\n"
-        "Пишу только когда реально опасно.\n\n"
-        "Тишина = рынок обычный.",
-        reply_markup=kb
-    )
-
-
-@dp.message_handler(commands=["market"])
-async def market_cmd(message: types.Message):
-    ensure_chat(message.chat.id)
-
-    if not cache:
-        await message.reply("⏳ Данные ещё собираются")
-        return
-
-    lines = ["📊 Market overview\n"]
-    for symbol, (score, direction, _) in cache.items():
-        ts = last_update.get(symbol)
-        t = time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "—"
-        lines.append(f"{symbol:<8} {score}/10 {direction or 'NEUTRAL':<7} ⏱ {t}")
-
-    await message.reply("\n".join(lines))
-
-
-@dp.message_handler(commands=["status"])
-async def status_cmd(message: types.Message):
-    ensure_chat(message.chat.id)
-    f = funding.get(symbol)
-    oi = len(oi_window.get(symbol, []))
-    liq = liquidations.get(symbol, 0)
-    
-    lines.append(f"{symbol}: funding={f} oi_pts={oi} liq={liq}")
-
-
-    if not last_update:
-        await message.reply("⚠️ Нет данных от Binance WS")
-        return
-
-    last_ts = max(last_update.values())
-    lag = int(time.time() - last_ts)
-
-    text = (
-        "🧠 System status\n\n"
-        f"WS: {'OK' if lag < 180 else 'STALE'}\n"
-        f"Active symbols: {len(last_update)}\n"
-        f"Last update lag: {lag}s"
-    )
-
-    await message.reply(text)
 
 
 @dp.message_handler(commands=["risk"])
@@ -214,52 +178,40 @@ async def risk_cmd(message: types.Message):
     trend = "rising" if score > prev else "falling" if score < prev else "flat"
     prev_scores[symbol] = score
 
-    f_now = funding.get(symbol, 0.0)
-    f_prev = last_funding.get(symbol, f_now)
+    f = funding.get(symbol)
+    f_txt = f"{f:+.4f}" if f is not None else "—"
 
-    oi_vals = [v for _, v in oi_window.get(symbol, [])]
-    oi_change = (
-        (oi_vals[-1] - oi_vals[0]) / oi_vals[0] * 100
-        if len(oi_vals) > 1 and oi_vals[0] > 0 else 0.0
+    oi_vals = oi_window.get(symbol, [])
+    oi_txt = (
+        f"{(oi_vals[-1][1] - oi_vals[0][1]) / oi_vals[0][1] * 100:+.1f}%"
+        if len(oi_vals) >= 2 and oi_vals[0][1] > 0 else "—"
     )
 
     ls = long_short_ratio.get(symbol, {"long": 0, "short": 0})
     total = ls["long"] + ls["short"]
-    crowd = int(ls["long"] / total * 100) if total else 50
+    crowd = f"{int(ls['long'] / total * 100)}%" if total else "—"
 
-    liq = liquidations.get(symbol, 0) / 1_000_000
+    liq = liquidations.get(symbol, 0)
+    liq_txt = f"{liq / 1_000_000:.1f}M" if liq > 0 else "—"
 
     text = (
         f"{symbol}\n"
         f"Risk: {score}/10 ({direction or 'NEUTRAL'} BIAS)\n"
         f"Trend: {trend}\n"
-        f"Funding: {f_prev:+.4f} → {f_now:+.4f}\n"
-        f"OI: {oi_change:+.1f}% / {WINDOW_SECONDS // 60}m\n"
-        f"Crowd: {crowd}% long\n"
-        f"Liq: {liq:.1f}M ({WINDOW_SECONDS // 60}m)"
+        f"Funding: {f_txt}\n"
+        f"OI: {oi_txt} / {WINDOW_SECONDS // 60}m\n"
+        f"Crowd: {crowd} long\n"
+        f"Liq: {liq_txt} ({WINDOW_SECONDS // 60}m)"
     )
 
     await message.reply(text)
 
 
 async def send_current_risk(chat_id):
-    if not cache:
-        await bot.send_message(chat_id, "⏳ Данные ещё собираются")
-        return
-
     lines = []
     for symbol, (score, direction, _) in cache.items():
-        ts = last_update.get(symbol)
-        t = time.strftime("%H:%M:%S", time.localtime(ts)) if ts else "—"
-        lines.append(f"{symbol}: {score} ({direction or 'NEUTRAL'}) ⏱ {t}")
-
+        lines.append(f"{symbol}: {score} ({direction or 'NEUTRAL'})")
     await bot.send_message(chat_id, "\n".join(lines))
-
-
-@dp.callback_query_handler(lambda c: c.data == "risk")
-async def current_risk(call: types.CallbackQuery):
-    ensure_chat(call.message.chat.id)
-    await send_current_risk(call.message.chat.id)
 
 
 # ---------------- HEALTH ----------------
@@ -274,10 +226,6 @@ class PingHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
-
 
 def start_http():
     HTTPServer(("0.0.0.0", 8080), PingHandler).serve_forever()
@@ -288,7 +236,6 @@ def start_http():
 async def on_startup(dp):
     global ws_task
     await bot.delete_webhook(drop_pending_updates=True)
-
     ws_task = asyncio.create_task(start_ws_safe())
     asyncio.create_task(ws_watchdog())
     asyncio.create_task(global_risk_loop())
