@@ -70,10 +70,9 @@ async def global_risk_loop():
     while True:
         for symbol in SYMBOLS:
             try:
-                now = time.time()
-
                 f = ws.funding.get(symbol)
                 pf = last_funding.get(symbol)
+                now = time.time()
 
                 funding_valid = False
                 if f is not None:
@@ -109,6 +108,8 @@ async def global_risk_loop():
 
                 cache[symbol] = (score, direction, reasons)
 
+                # -------- ALERT FILTERING --------
+
                 quality = meta.stream_quality(symbol)
                 if quality["level"] == "LOW":
                     continue
@@ -129,21 +130,34 @@ async def global_risk_loop():
                     confidence += 1
                 confidence = min(confidence, 5)
 
+                conf_level = meta.confidence_level(confidence)
+
                 for chat_id in active_chats:
+
+                    # ---------- HARD ----------
                     if score >= HARD_ALERT_LEVEL and direction and confidence >= 3:
-                        prefix = "🚨 HARD RISK ALERT"
-                    elif score >= EARLY_ALERT_LEVEL:
-                        prefix = "⚠️ RISK BUILDUP"
-                    else:
+                        text = (
+                            f"🚨 HARD RISK ALERT {symbol}\n\n"
+                            f"Risk: {score}\n"
+                            f"Direction: {direction}\n"
+                            f"Confidence: {conf_level}"
+                        )
+                        await bot.send_message(chat_id, text)
                         continue
 
-                    await bot.send_message(
-                        chat_id,
-                        f"{prefix} {symbol}\n"
-                        f"Risk: {score}\n"
-                        f"Direction: {direction}\n"
-                        f"Confidence: {meta.confidence_level(confidence)}"
-                    )
+                    # ---------- BUILDUP ----------
+                    if score >= EARLY_ALERT_LEVEL:
+                        text = (
+                            f"⚠️ RISK BUILDUP {symbol}\n\n"
+                            f"Risk: {score}\n"
+                            f"Direction: {direction}"
+                        )
+
+                        # показываем confidence ТОЛЬКО если >= MEDIUM
+                        if conf_level in ("MEDIUM", "HIGH"):
+                            text += f"\nConfidence: {conf_level}"
+
+                        await bot.send_message(chat_id, text)
 
             except Exception as e:
                 print("RISK LOOP ERROR:", e, flush=True)
@@ -183,6 +197,17 @@ async def risk_cmd(message: types.Message):
     state = meta.detect_state(score, False, False, liq)
     quality = meta.stream_quality(symbol)
 
+    confidence = meta.calculate_confidence(
+        score,
+        direction,
+        False,
+        False,
+        liq,
+        None,
+        {}
+    )
+    conf_level = meta.confidence_level(confidence)
+
     # -------- DEBUG --------
     if len(parts) >= 3 and parts[2].lower() == "debug":
         text = (
@@ -194,6 +219,7 @@ async def risk_cmd(message: types.Message):
             f"liquidations: {liq}\n"
             f"state: {state}\n"
             f"quality: {quality['level']}\n"
+            f"confidence: {confidence} ({conf_level})"
         )
         await message.reply(text)
         return
@@ -217,6 +243,7 @@ async def risk_cmd(message: types.Message):
             f"{symbol}\n"
             f"Risk: {score}/10 ({direction or 'NEUTRAL'})\n"
             f"State: {state}\n"
+            f"Confidence: {conf_level} ({confidence}/5)\n"
             f"Quality: {quality['level']}\n\n"
             + "\n".join(f"- {r}" for r in reasons)
         )
