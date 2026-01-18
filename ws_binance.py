@@ -6,9 +6,11 @@ from collections import deque
 from config import SYMBOLS, WINDOW_SECONDS
 
 funding = {}
+mark_price = {}
 open_interest = {}
 long_short_ratio = {}
 liquidations = {}
+liq_sides = {}
 last_update = {}
 
 trades_window = {s: deque() for s in SYMBOLS}
@@ -55,11 +57,11 @@ async def binance_ws():
 
                     if "markPrice" in stream:
                         funding[symbol] = float(data["r"])
+                        mark_price[symbol] = float(data["p"])
                         touch(symbol)
 
                     elif "openInterest" in stream:
                         oi = float(data["oi"])
-                        open_interest[symbol] = oi
                         oi_window[symbol].append((now, oi))
                         cleanup_window(oi_window[symbol])
                         touch(symbol)
@@ -82,9 +84,19 @@ async def binance_ws():
 
                     elif "forceOrder" in stream:
                         qty = float(data["o"]["q"])
-                        liq_window[symbol].append((now, qty))
+                        side = "long" if data["o"]["S"] == "SELL" else "short"
+
+                        liq_window[symbol].append((now, qty, side))
                         cleanup_window(liq_window[symbol])
-                        liquidations[symbol] = sum(q for _, q in liq_window[symbol])
+
+                        liq_sides[symbol] = {
+                            "long": sum(q for _, q, s in liq_window[symbol] if s == "long"),
+                            "short": sum(q for _, q, s in liq_window[symbol] if s == "short")
+                        }
+
+                        liquidations[symbol] = (
+                            liq_sides[symbol]["long"] + liq_sides[symbol]["short"]
+                        )
                         touch(symbol)
 
         except Exception:
