@@ -70,9 +70,10 @@ async def global_risk_loop():
     while True:
         for symbol in SYMBOLS:
             try:
+                now = time.time()
+
                 f = ws.funding.get(symbol)
                 pf = last_funding.get(symbol)
-                now = time.time()
 
                 funding_valid = False
                 if f is not None:
@@ -108,8 +109,6 @@ async def global_risk_loop():
 
                 cache[symbol] = (score, direction, reasons)
 
-                # -------- ALERT FILTERING --------
-
                 quality = meta.stream_quality(symbol)
                 if quality["level"] == "LOW":
                     continue
@@ -134,29 +133,26 @@ async def global_risk_loop():
 
                 for chat_id in active_chats:
 
-                    # ---------- HARD ----------
+                    # HARD
                     if score >= HARD_ALERT_LEVEL and direction and confidence >= 3:
-                        text = (
+                        await bot.send_message(
+                            chat_id,
                             f"🚨 HARD RISK ALERT {symbol}\n\n"
                             f"Risk: {score}\n"
                             f"Direction: {direction}\n"
                             f"Confidence: {conf_level}"
                         )
-                        await bot.send_message(chat_id, text)
                         continue
 
-                    # ---------- BUILDUP ----------
+                    # BUILDUP
                     if score >= EARLY_ALERT_LEVEL:
                         text = (
                             f"⚠️ RISK BUILDUP {symbol}\n\n"
                             f"Risk: {score}\n"
                             f"Direction: {direction}"
                         )
-
-                        # показываем confidence ТОЛЬКО если >= MEDIUM
                         if conf_level in ("MEDIUM", "HIGH"):
                             text += f"\nConfidence: {conf_level}"
-
                         await bot.send_message(chat_id, text)
 
             except Exception as e:
@@ -169,6 +165,39 @@ async def global_risk_loop():
 
 def ensure_chat(chat_id):
     active_chats.add(chat_id)
+
+
+def build_market_snapshot(symbol):
+    f = ws.funding.get(symbol)
+    f_txt = f"{f:+.4f}" if f is not None else "—"
+
+    oi_vals = ws.oi_window.get(symbol, [])
+    oi_txt = (
+        f"{(oi_vals[-1][1] - oi_vals[0][1]) / oi_vals[0][1] * 100:+.1f}%"
+        if len(oi_vals) >= 2 and oi_vals[0][1] > 0 else "—"
+    )
+
+    ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
+    total = ls["long"] + ls["short"]
+    pressure = f"{int(ls['long'] / total * 100)}%" if total else "—"
+
+    liq = ws.liquidations.get(symbol, 0)
+    liq_txt = f"{liq / 1_000_000:.1f}M" if liq > 0 else "—"
+
+    prev = prev_scores.get(symbol)
+    trend = "flat"
+    if prev is not None:
+        score = cache[symbol][0]
+        trend = "rising" if score > prev else "falling" if score < prev else "flat"
+    prev_scores[symbol] = cache[symbol][0]
+
+    return (
+        f"Trend: {trend}\n"
+        f"Funding: {f_txt}\n"
+        f"OI: {oi_txt} / {WINDOW_SECONDS // 60}m\n"
+        f"Pressure: {pressure} buy\n"
+        f"Liq: {liq_txt} ({WINDOW_SECONDS // 60}m)"
+    )
 
 
 @dp.message_handler(commands=["risk"])
@@ -186,56 +215,43 @@ async def risk_cmd(message: types.Message):
         return
 
     score, direction, reasons = cache[symbol]
+    snapshot = build_market_snapshot(symbol)
 
-    oi_vals = ws.oi_window.get(symbol, [])
-    liq = ws.liquidations.get(symbol, 0)
-
-    ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
-    total = ls["long"] + ls["short"]
-    pressure_ratio = ls["long"] / total if total else 0.5
-
-    state = meta.detect_state(score, False, False, liq)
-    quality = meta.stream_quality(symbol)
-
-    confidence = meta.calculate_confidence(
-        score,
-        direction,
-        False,
-        False,
-        liq,
-        None,
-        {}
-    )
-    conf_level = meta.confidence_level(confidence)
-
-    # -------- DEBUG --------
+    # DEBUG
     if len(parts) >= 3 and parts[2].lower() == "debug":
-        text = (
+        quality = meta.stream_quality(symbol)
+        confidence = meta.calculate_confidence(
+            score, direction, False, False,
+            ws.liquidations.get(symbol, 0),
+            None, {}
+        )
+        conf_level = meta.confidence_level(confidence)
+
+        await message.reply(
             f"DEBUG {symbol}\n\n"
             f"score: {score}\n"
             f"direction: {direction}\n"
-            f"pressure_ratio: {pressure_ratio:.2f}\n"
-            f"oi_points: {len(oi_vals)}\n"
-            f"liquidations: {liq}\n"
-            f"state: {state}\n"
-            f"quality: {quality['level']}\n"
-            f"confidence: {confidence} ({conf_level})"
+            f"confidence: {confidence} ({conf_level})\n"
+            f"quality: {quality['level']}"
         )
-        await message.reply(text)
         return
 
-    # -------- FULL --------
+    # FULL
     if len(parts) >= 3 and parts[2].lower() == "full":
-        price_trend = "FLAT"
-        if len(oi_vals) >= 2:
-            price_trend = "UP" if oi_vals[-1][1] > oi_vals[0][1] else "DOWN"
+        liq = ws.liquidations.get(symbol, 0)
+        state = meta.detect_state(score, False, False, liq)
+        quality = meta.stream_quality(symbol)
+        confidence = meta.calculate_confidence(
+            score, direction, False, False, liq, None, {}
+        )
+        conf_level = meta.confidence_level(confidence)
 
         divs = divergence.detect_divergence(
             symbol=symbol,
             state=state,
-            pressure_ratio=pressure_ratio,
-            oi_window=oi_vals,
-            price_trend=price_trend,
+            pressure_ratio=ws.long_short_ratio.get(symbol, {}).get("long", 0),
+            oi_window=ws.oi_window.get(symbol, []),
+            price_trend="FLAT",
             liquidations=liq
         )
 
@@ -245,7 +261,8 @@ async def risk_cmd(message: types.Message):
             f"State: {state}\n"
             f"Confidence: {conf_level} ({confidence}/5)\n"
             f"Quality: {quality['level']}\n\n"
-            + "\n".join(f"- {r}" for r in reasons)
+            + snapshot +
+            "\n\n" + "\n".join(f"- {r}" for r in reasons)
         )
 
         if divs:
@@ -254,7 +271,12 @@ async def risk_cmd(message: types.Message):
         await message.reply(text)
         return
 
-    await message.reply(f"{symbol}: {score} ({direction or 'NEUTRAL'})")
+    # SIMPLE
+    await message.reply(
+        f"{symbol}\n"
+        f"Risk: {score}/10 ({direction or 'NEUTRAL'})\n"
+        + snapshot
+    )
 
 
 async def send_current_risk(chat_id):
