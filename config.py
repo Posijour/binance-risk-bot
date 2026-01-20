@@ -18,6 +18,11 @@ SYMBOLS = [
     "XMRUSDT",
     "ZECUSDT",
     "HYPEUSDT",
+    "ZKPUSDT",
+    "GPSUSDT",
+    "RIVERUSDT",
+    "AXSUSDT",
+    "BERAUSDT",
 ]
 
 INTERVAL_SECONDS = 300
@@ -43,6 +48,12 @@ LIQ_THRESHOLDS = {
     "XMRUSDT": 2_500_000,
     "ZECUSDT": 2_000_000,
     "HYPEUSDT": 1_500_000,
+    "ZKPUSDT": 50_000,
+    "GPSUSDT": 50_000,
+    "RIVERUSDT": 50_000,
+    "AXSUSDT": 50_000,
+    "BERAUSDT": 50_000,
 }
+
 
 
