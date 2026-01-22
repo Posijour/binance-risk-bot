@@ -173,6 +173,17 @@ async def global_risk_loop():
                 )
 
                 cache[symbol] = (score, direction, reasons)
+
+                log_event("risk_eval", {
+                    "symbol": symbol,
+                    "risk": score,
+                    "direction": direction,
+                    "funding": f,
+                    "oi_spike": oi_spike,
+                    "funding_spike": funding_spike,
+                    "liq": liq,
+                })
+
                 
                 # -------- RISK ALERTS --------
                 quality = meta.stream_quality(symbol)
@@ -379,6 +390,3 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
-
-
-
