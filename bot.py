@@ -198,6 +198,7 @@ async def global_risk_loop():
                 conf_level = meta.confidence_level(confidence)
                 
                 for chat in active_chats:
+
                     if score >= HARD_ALERT_LEVEL and direction and confidence >= 3:
                         await bot.send_message(
                             chat,
@@ -206,6 +207,17 @@ async def global_risk_loop():
                             f"Direction: {direction}\n"
                             f"Confidence: {conf_level}"
                         )
+                
+                        log_event("alert_sent", {
+                            "ts": int(time.time()),
+                            "symbol": symbol,
+                            "risk": score,
+                            "direction": direction,
+                            "confidence": confidence,
+                            "type": "HARD",
+                            "chat_id": chat,
+                        })
+                
                         continue
                 
                     if score >= EARLY_ALERT_LEVEL:
@@ -216,20 +228,18 @@ async def global_risk_loop():
                         )
                         if conf_level in ("MEDIUM", "HIGH") and reasons:
                             text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
-                        await bot.send_message(chat, text)
-
                 
-                # ---------- LOG: расчет риска ----------
-                log_event("risk_eval", {
-                    "ts": int(now),
-                    "symbol": symbol,
-                    "risk": score,
-                    "direction": direction,
-                    "funding": f,
-                    "oi_spike": oi_spike,
-                    "funding_spike": funding_spike,
-                    "liq": liq,
-                })
+                        await bot.send_message(chat, text)
+                
+                        log_event("alert_sent", {
+                            "ts": int(time.time()),
+                            "symbol": symbol,
+                            "risk": score,
+                            "direction": direction,
+                            "confidence": confidence,
+                            "type": "BUILDUP",
+                            "chat_id": chat,
+                        })
 
             except Exception as e:
                 print("RISK LOOP ERROR:", e, flush=True)
@@ -369,5 +379,6 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
