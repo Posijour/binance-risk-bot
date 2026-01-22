@@ -65,7 +65,7 @@ def qualitative_funding(f):
 def percent_funding(f):
     if f is None:
         return "unknown"
-    return f"{f * 100:.4f}%"
+    return f"{f * 100:.5f}%"
 
 
 # ---------------- WS SAFE START ----------------
@@ -301,3 +301,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
