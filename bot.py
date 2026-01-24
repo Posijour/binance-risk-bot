@@ -218,87 +218,62 @@ async def global_risk_loop():
                 
                 conf_level = meta.confidence_level(confidence)
                 
-                for chat in active_chats:
-
-                    if score >= HARD_ALERT_LEVEL and direction and confidence >= 3:
-                        await bot.send_message(
-                            chat,
-                            f"🚨 HARD RISK ALERT {symbol}\n\n"
-                            f"Risk: {score}\n"
-                            f"Direction: {direction}\n"
-                            f"Confidence: {conf_level}"
-                        )
+                now_ts = int(time.time())
                 
-                        log_event("alert_sent", {
-                            "ts": int(time.time()),
-                            "symbol": symbol,
-                            "risk": score,
-                            "direction": direction,
-                            "confidence": confidence,
-                            "type": "HARD",
-                            "chat_id": chat,
-                        })
+                # ---------- HARD ALERT ----------
+                if score >= HARD_ALERT_LEVEL and direction and confidence >= 3:
+                    text = (
+                        f"🚨 HARD RISK ALERT {symbol}\n\n"
+                        f"Risk: {score}\n"
+                        f"Direction: {direction}\n"
+                        f"Confidence: {conf_level}"
+                    )
                 
-                        continue
-                    if score >= EARLY_ALERT_LEVEL:
-                        now_ts = int(time.time())
-                    
-                        alert_history[symbol].append(now_ts)
-                    
-                        cutoff = now_ts - ALERT_WINDOW_HOURS * 3600
-                        while alert_history[symbol] and alert_history[symbol][0] < cutoff:
-                            alert_history[symbol].popleft()
-                    
-                        symbol_alerts_count = len(alert_history[symbol])
-                    
-                        text = (
-                            f"⚠️ RISK BUILDUP {symbol}\n\n"
-                            f"Risk: {score}\n"
-                            f"Direction: {direction}\n"
-                            f"Alerts last {ALERT_WINDOW_HOURS}h: {symbol_alerts_count}"
-                        )
-                    
-                        if conf_level in ("MEDIUM", "HIGH") and reasons:
-                            text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
-                    
-                        await bot.send_message(chat, text)
-                    
-                        log_event("alert_sent", {
-                            "ts": now_ts,
-                            "symbol": symbol,
-                            "risk": score,
-                            "direction": direction,
-                            "confidence": confidence,
-                            "type": "BUILDUP",
-                            "chat_id": chat,
-                        })
-
-                    if score >= EARLY_ALERT_LEVEL:
-                        text = (
-                            f"⚠️ RISK BUILDUP {symbol}\n\n"
-                            f"Risk: {score}\n"
-                            f"Direction: {direction}"
-                        )
-                        if conf_level in ("MEDIUM", "HIGH") and reasons:
-                            text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
-                        text += f"\nAlerts last {ALERT_WINDOW_HOURS}h: {symbol_alerts_count}"
-
+                    for chat in active_chats:
                         await bot.send_message(chat, text)
                 
-                        log_event("alert_sent", {
-                            "ts": int(time.time()),
-                            "symbol": symbol,
-                            "risk": score,
-                            "direction": direction,
-                            "confidence": confidence,
-                            "type": "BUILDUP",
-                            "chat_id": chat,
-                        })
-
-            except Exception as e:
-                print("RISK LOOP ERROR:", e, flush=True)
-
-        await asyncio.sleep(INTERVAL_SECONDS)
+                    log_event("alert_sent", {
+                        "ts": now_ts,
+                        "symbol": symbol,
+                        "risk": score,
+                        "direction": direction,
+                        "confidence": confidence,
+                        "type": "HARD",
+                        "chat_id": "broadcast",
+                    })
+                
+                # ---------- BUILDUP ALERT ----------
+                elif score >= EARLY_ALERT_LEVEL:
+                    alert_history[symbol].append(now_ts)
+                
+                    cutoff = now_ts - ALERT_WINDOW_HOURS * 3600
+                    while alert_history[symbol] and alert_history[symbol][0] < cutoff:
+                        alert_history[symbol].popleft()
+                
+                    symbol_alerts_count = len(alert_history[symbol])
+                
+                    text = (
+                        f"⚠️ RISK BUILDUP {symbol}\n\n"
+                        f"Risk: {score}\n"
+                        f"Direction: {direction}\n"
+                        f"Alerts last {ALERT_WINDOW_HOURS}h: {symbol_alerts_count}"
+                    )
+                
+                    if conf_level in ("MEDIUM", "HIGH") and reasons:
+                        text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
+                
+                    for chat in active_chats:
+                        await bot.send_message(chat, text)
+                
+                    log_event("alert_sent", {
+                        "ts": now_ts,
+                        "symbol": symbol,
+                        "risk": score,
+                        "direction": direction,
+                        "confidence": confidence,
+                        "type": "BUILDUP",
+                        "chat_id": "broadcast",
+                    })
 
 
 # ---------------- COMMANDS ----------------
@@ -440,6 +415,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
