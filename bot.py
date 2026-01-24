@@ -351,17 +351,24 @@ async def risk_cmd(message: types.Message):
     disp = display_symbol(symbol)
     f = ws.funding.get(symbol)
 
-    if len(parts) >= 3 and parts[2].lower() == "debug":
-        await message.reply(f"DEBUG {disp}\nrisk: {score}\nfunding_raw: {f}")
-        return
-
     if len(parts) >= 3 and parts[2].lower() == "full":
+        now_ts = int(time.time())
+        cutoff = now_ts - ALERT_WINDOW_HOURS * 3600
+    
+        history = alert_history.get(symbol, [])
+        alerts_last = sum(1 for ts in history if ts >= cutoff)
+    
         text = (
-            f"{disp}\nRisk: {score}/10 ({direction or 'NEUTRAL'})\n"
-            f"Funding: {percent_funding(f)}\n\n{snap}"
+            f"{disp}\n"
+            f"Risk: {score}/10 ({direction or 'NEUTRAL'})\n"
+            f"Funding: {percent_funding(f)}\n\n"
+            f"Alerts last {ALERT_WINDOW_HOURS}h: {alerts_last}\n\n"
+            f"{snap}"
         )
+    
         if reasons:
             text += "\n\nReasons:\n" + "\n".join(f"- {r}" for r in reasons)
+    
         await message.reply(text)
         return
 
@@ -409,6 +416,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
