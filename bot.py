@@ -123,12 +123,18 @@ def build_market_snapshot(symbol):
     liq = ws.liquidations.get(symbol, 0)
     liq_txt = f"{liq / 1_000_000:.1f}M" if liq > 0 else "none detected"
 
-    prev = prev_s.get(symbol)
+    prev = prev_scores.get(symbol)
+    score = cache.get(symbol, (None,))[0]
+
     trend = "flat"
-    if prev is not None:
-         = cache[symbol][0]
-        trend = "rising" if  > prev else "falling" if score < prev else "flat"
-    prev_scores[symbol] = cache[symbol][0]
+    if prev is not None and score is not None:
+        trend = (
+            "rising" if score > prev
+            else "falling" if score < prev
+            else "flat"
+        )
+
+    prev_scores[symbol] = score
 
     return (
         f"Trend: {trend}\n"
@@ -136,7 +142,6 @@ def build_market_snapshot(symbol):
         f"Pressure: {pressure} buy\n"
         f"Liq: {liq_txt}"
     )
-
 
 # ---------------- GLOBAL RISK LOOP ----------------
 
@@ -404,4 +409,5 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
