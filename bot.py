@@ -247,7 +247,7 @@ async def global_risk_loop():
                     while alert_history[symbol] and alert_history[symbol][0] < cutoff:
                         alert_history[symbol].popleft()
                     
-                    alerts_count = len(alert_history[symbol])
+                    symbol_alerts_count = len(alert_history[symbol])
 
                     if score >= EARLY_ALERT_LEVEL:
                         text = (
@@ -257,7 +257,7 @@ async def global_risk_loop():
                         )
                         if conf_level in ("MEDIUM", "HIGH") and reasons:
                             text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
-                        text += f"\nAlerts last {ALERT_WINDOW_HOURS}h: {alerts_count}"
+                        text += f"\nAlerts last {ALERT_WINDOW_HOURS}h: {symbol_alerts_count}"
 
                         await bot.send_message(chat, text)
                 
@@ -409,5 +409,6 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
