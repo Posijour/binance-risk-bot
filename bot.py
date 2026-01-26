@@ -217,17 +217,17 @@ async def global_risk_loop():
         if now_ts - last_regime_ts >= MARKET_REGIME_INTERVAL:
             state = build_market_state()
             regime = detect_market_regime(state)
-    
-            if regime != current_market_regime:
-                current_market_regime = regime
-    
-                log_event("market_regime", {
-                    "ts": now_ts,
-                    "regime": regime,
-                    **state,
-                })
-    
+        
+            # логируем ВСЕГДА
+            log_event("market_regime", {
+                "ts": now_ts,
+                "regime": regime,
+                **state,
+            })
+        
+            current_market_regime = regime
             last_regime_ts = now_ts
+
 
         for symbol in SYMBOLS:
             try:
@@ -533,4 +533,5 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
