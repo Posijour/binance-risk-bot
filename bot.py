@@ -196,7 +196,7 @@ async def global_risk_loop():
     await asyncio.sleep(10)
 
     while True:
-             global last_regime_ts, current_market_regime
+            global last_regime_ts, current_market_regime
 
             now_ts = int(time.time())
     
@@ -493,6 +493,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
