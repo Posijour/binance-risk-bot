@@ -391,6 +391,7 @@ async def commands_cmd(message: types.Message):
         "/risk BTC — текущий рыночный срез\n"
         "/risk BTC full — расширенный контекст\n"
         "/risk BTC debug — технические данные\n\n"
+        "/regime — макро-состояние рынка\n"
         "/help — как читать данные"
     )
 
@@ -532,3 +533,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
