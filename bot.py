@@ -196,24 +196,24 @@ async def global_risk_loop():
     await asyncio.sleep(10)
 
     while True:
-            global last_regime_ts, current_market_regime
+        global last_regime_ts, current_market_regime
 
-            now_ts = int(time.time())
+        now_ts = int(time.time())
     
-            if now_ts - last_regime_ts >= MARKET_REGIME_INTERVAL:
-                state = build_market_state()
-                regime = detect_market_regime(state)
+        if now_ts - last_regime_ts >= MARKET_REGIME_INTERVAL:
+            state = build_market_state()
+            regime = detect_market_regime(state)
     
-                if regime != current_market_regime:
-                    current_market_regime = regime
+            if regime != current_market_regime:
+                current_market_regime = regime
     
-                    log_event("market_regime", {
-                        "ts": now_ts,
-                        "regime": regime,
-                        **state,
-                    })
+                log_event("market_regime", {
+                    "ts": now_ts,
+                    "regime": regime,
+                    **state,
+                })
     
-                last_regime_ts = now_ts
+             last_regime_ts = now_ts
 
         for symbol in SYMBOLS:
             try:
@@ -493,6 +493,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
