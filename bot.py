@@ -153,6 +153,7 @@ def build_market_state():
     risks = []
     directions = []
     buildups = 0
+    funding_vals = []
 
     for symbol, data in cache.items():
         score, direction, _ = data
@@ -161,21 +162,33 @@ def build_market_state():
         if direction:
             directions.append(direction)
 
-    for symbol, q in alert_history.items():
+        f = ws.funding.get(symbol)
+        if f is not None:
+            funding_vals.append(f)
+
+    for q in alert_history.values():
         buildups += len(q)
 
     avg_risk = sum(risks) / len(risks) if risks else 0
+    avg_funding = sum(funding_vals) / len(funding_vals) if funding_vals else 0
 
     long_bias = directions.count("LONG")
     short_bias = directions.count("SHORT")
 
+    bias = "neutral"
+    if long_bias > short_bias + 1:
+        bias = "LONG-heavy"
+    elif short_bias > long_bias + 1:
+        bias = "SHORT-heavy"
+
     return {
         "avg_risk": round(avg_risk, 2),
         "buildup_count": buildups,
-        "long_bias": long_bias,
-        "short_bias": short_bias,
+        "bias": bias,
+        "avg_funding": round(avg_funding, 6),
         "symbols": len(cache),
     }
+
 
 def detect_market_regime(state):
     if state["avg_risk"] < 1 and state["buildup_count"] < 5:
@@ -188,6 +201,7 @@ def detect_market_regime(state):
         return "STRESS"
 
     return "UNDEFINED"
+
 
 
 # ---------------- GLOBAL RISK LOOP ----------------
@@ -454,6 +468,31 @@ async def risk_cmd(message: types.Message):
         f"Funding: {qualitative_funding(f)}\n\n{snap}"
     )
 
+@dp.message_handler(commands=["regime"])
+async def regime_cmd(message: types.Message):
+    state = build_market_state()
+    regime = detect_market_regime(state)
+
+    text = (
+        f"🌍 Market Regime: {regime}\n\n"
+        f"Avg risk: {state['avg_risk']}\n"
+        f"Buildups (3h): {state['buildup_count']}\n"
+        f"Bias: {state['bias']}\n"
+        f"Avg funding: {state['avg_funding']}\n"
+        f"Symbols tracked: {state['symbols']}\n\n"
+    )
+
+    if regime == "CALM":
+        text += "Interpretation:\nLow systemic stress.\nCrowd positioning balanced."
+    elif regime == "CROWD_IMBALANCE":
+        text += "Interpretation:\nCrowded positioning detected.\nAsymmetric risk increasing."
+    elif regime == "STRESS":
+        text += "Interpretation:\nMarket under stress.\nVolatility expansion likely."
+    else:
+        text += "Interpretation:\nMarket state unclear."
+
+    await message.reply(text)
+    
 
 async def send_current_risk(chat_id):
     lines = [
@@ -493,15 +532,3 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
-
-
-
-
-
-
-
-
-
-
-
-
