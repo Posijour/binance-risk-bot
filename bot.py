@@ -213,7 +213,7 @@ async def global_risk_loop():
                     **state,
                 })
     
-             last_regime_ts = now_ts
+            last_regime_ts = now_ts
 
         for symbol in SYMBOLS:
             try:
@@ -493,6 +493,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
