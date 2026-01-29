@@ -49,7 +49,7 @@ ws_running = False
 # ---------------- KEYBOARD ----------------
 
 main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-main_kb.add(KeyboardButton("📋 Команды"))
+main_kb.add(KeyboardButton("📋 Commands"))
 
 
 # ---------------- SYMBOL HELPERS ----------------
@@ -149,11 +149,11 @@ def build_market_snapshot(symbol):
         f"Liq: {liq_txt}"
     )
 
+
 def build_market_state():
     risks = []
     directions = []
     buildups = 0
-    funding_vals = []
 
     for symbol, data in cache.items():
         score, direction, _ = data
@@ -162,30 +162,19 @@ def build_market_state():
         if direction:
             directions.append(direction)
 
-        f = ws.funding.get(symbol)
-        if f is not None:
-            funding_vals.append(f)
-
     for q in alert_history.values():
         buildups += len(q)
 
     avg_risk = sum(risks) / len(risks) if risks else 0
-    avg_funding = sum(funding_vals) / len(funding_vals) if funding_vals else 0
 
     long_bias = directions.count("LONG")
     short_bias = directions.count("SHORT")
 
-    bias = "neutral"
-    if long_bias > short_bias + 1:
-        bias = "LONG-heavy"
-    elif short_bias > long_bias + 1:
-        bias = "SHORT-heavy"
-
     return {
         "avg_risk": round(avg_risk, 2),
         "buildup_count": buildups,
-        "bias": bias,
-        "avg_funding": round(avg_funding, 6),
+        "long_bias": long_bias,
+        "short_bias": short_bias,
         "symbols": len(cache),
     }
 
@@ -415,12 +404,12 @@ async def start_cmd(message: types.Message):
 async def commands_cmd(message: types.Message):
     await message.reply(
         "📋 Commands:\n\n"
-        "/risk — risk overview across all tracked markets\n"
-        "/risk BTC — current market snapshot\n"
+        "/risk — market risk overview\n"
+        "/risk BTC — current risk snapshot\n"
         "/risk BTC full — extended market context\n"
-        "/risk BTC debug — technical details\n\n"
-        "/regime — macro market regime\n"
-        "/about — what this bot does\n"
+        "/risk BTC debug — technical data\n\n"
+        "/regime — market-level risk state\n"
+        "/about — what this bot is\n"
         "/help — how to read the data"
     )
 
@@ -429,14 +418,31 @@ async def commands_cmd(message: types.Message):
 async def help_cmd(message: types.Message):
     await message.reply(
         "ℹ️ About this bot\n\n"
-        "This bot tracks market RISK, not trading signals.\n"
-        "If the bot is silent — the market is calm.\n\n"
-        "Metrics:\n"
-        "Risk — market stress level (0–10)\n"
-        "Direction — where the market is vulnerable\n"
-        "Confidence — reliability of the assessment\n"
-        "Pressure — long/short imbalance\n"
-        "Liquidations — forced position closures"
+        "This bot tracks MARKET RISK — not price, not signals.\n"
+        "It provides context about crowd behavior and systemic stress.\n\n"
+
+        "Core concepts:\n"
+        "• Risk — aggregate market stress (0–10)\n"
+        "• Direction — side where the market is vulnerable (LONG / SHORT)\n"
+        "• Confidence — reliability of the risk assessment\n\n"
+
+        "Crowd & positioning:\n"
+        "• Pressure — long/short participation ratio\n"
+        "• Crowd imbalance — asymmetric positioning\n\n"
+
+        "Market level:\n"
+        "• Market regime — high-level market state\n"
+        "  (CALM / CROWD_IMBALANCE / STRESS)\n\n"
+
+        "Important:\n"
+        "• This is NOT a trading signal bot\n"
+        "• It does NOT predict price\n"
+        "• It provides observations, not advice\n\n"
+
+        "If the bot is silent — the market is calm.\n"
+        "If alerts appear — something is changing.\n\n"
+
+        "This is a market risk log, not a forecast."
     )
 
 
@@ -479,19 +485,27 @@ async def risk_cmd(message: types.Message):
         alerts_last = sum(1 for ts in history if ts >= cutoff)
     
         text = (
-            f"{disp}\n"
-            f"Market regime: {current_market_regime}\n"
+            f"{disp}\n\n"
             f"Risk: {score}/10 ({direction or 'NEUTRAL'})\n"
-            f"Funding: {percent_funding(f)}\n\n"
-            f"Alerts last {ALERT_WINDOW_HOURS}h: {alerts_last}\n\n"
-            f"{snap}"
-        )
+            f"Confidence: {meta.confidence_level(meta.calculate_confidence(score, direction, False, False, 0, None, {}))}\n\n"
     
-        if reasons:
-            text += "\n\nReasons:\n" + "\n".join(f"- {r}" for r in reasons)
+            f"Market context:\n"
+            f"• Funding: {percent_funding(f)}\n"
+            f"• Pressure: {build_market_snapshot(symbol).splitlines()[2].replace('Pressure: ', '')}\n\n"
+    
+            f"Risk activity:\n"
+            f"• Buildups (last {ALERT_WINDOW_HOURS}h): {alerts_last}\n\n"
+    
+            f"Interpretation:\n"
+            f"Crowded positioning detected.\n"
+            f"Asymmetric risk is building.\n\n"
+    
+            f"This is a market risk log, not a forecast."
+        )
     
         await message.reply(text)
         return
+
 
     await message.reply(
         f"{disp}\nRisk: {score}/10 ({direction or 'NEUTRAL'})\n"
@@ -505,36 +519,39 @@ async def regime_cmd(message: types.Message):
 
     text = (
         f"🌍 Market Regime: {regime}\n\n"
-        f"Average risk: {state['avg_risk']}\n"
-        f"Risk buildups (last 3h): {state['buildup_count']}\n"
-        f"Long bias: {state['long_bias']}\n"
-        f"Short bias: {state['short_bias']}\n"
-        f"Symbols tracked: {state['symbols']}\n\n"
-        f"Interpretation:\n"
+        f"Market metrics:\n"
+        f"• Average risk: {state['avg_risk']}\n"
+        f"• Risk buildups (last 3h): {state['buildup_count']}\n"
+        f"• Long bias: {state['long_bias']}\n"
+        f"• Short bias: {state['short_bias']}\n"
+        f"• Symbols tracked: {state['symbols']}\n\n"
     )
 
     if regime == "CALM":
         text += (
+            "Interpretation:\n"
             "Low systemic stress.\n"
-            "Crowd positioning is relatively balanced."
+            "Crowd positioning is balanced.\n"
         )
     elif regime == "CROWD_IMBALANCE":
         text += (
-            "Crowded positioning detected.\n"
-            "Asymmetric risk is building."
+            "Interpretation:\n"
+            "Crowded positioning dominates the market.\n"
+            "Asymmetric risk is building.\n"
         )
     elif regime == "STRESS":
         text += (
-            "Elevated market stress.\n"
-            "Instability and volatility expansion possible."
+            "Interpretation:\n"
+            "Market is under systemic stress.\n"
+            "Volatility expansion possible.\n"
         )
     else:
-        text += (
-            "Market state is unclear.\n"
-            "Signals are mixed."
-        )
+        text += "Interpretation:\nMarket state unclear.\n"
+
+    text += "\nThis is a market risk log, not a forecast."
 
     await message.reply(text)
+
     
 
 async def send_current_risk(chat_id):
@@ -575,6 +592,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
