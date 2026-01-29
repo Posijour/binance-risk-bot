@@ -364,7 +364,7 @@ def ensure_chat(chat_id):
 @dp.message_handler(commands=["about"])
 async def about_cmd(message: types.Message):
     await message.reply(
-        "This bot monitors crypto market risk and crowd behavior in real time.\n\n"
+        "Livermore monitors crypto market risk and crowd behavior in real time.\n\n"
         "It tracks:\n"
         "• Risk buildup\n"
         "• Crowd imbalance (long/short pressure)\n"
@@ -373,7 +373,7 @@ async def about_cmd(message: types.Message):
         "• This is NOT a trading signal bot\n"
         "• It does NOT predict price\n"
         "• It provides context, not advice\n\n"
-        "If the bot is silent — the market is calm.\n"
+        "If Livermore is silent — the market is calm.\n"
         "If alerts appear — something is changing.\n\n"
         "Experimental system."
     )
@@ -394,7 +394,7 @@ async def philosophy_cmd(message: types.Message):
 async def start_cmd(message: types.Message):
     ensure_chat(message.chat.id)
     await message.reply(
-        "Hi. I am a crypto market risk monitoring bot.\n\n"
+        "Hi. I am Livermore, a crypto market risk monitoring bot.\n\n"
         "Tap “📋 Commands” to see what I can do.",
         reply_markup=main_kb
     )
@@ -596,6 +596,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
