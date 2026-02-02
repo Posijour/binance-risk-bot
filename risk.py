@@ -15,12 +15,12 @@ def calculate_risk(
     # FUNDING
     if funding is not None:
         if funding > 0.02:
-            score += 2
+            score += 3
             direction_votes["LONG"] += 1
             reasons.append("Funding экстремально положительный")
 
         if funding < -0.02:
-            score += 2
+            score += 3
             direction_votes["SHORT"] += 1
             reasons.append("Funding экстремально отрицательный")
 
@@ -56,10 +56,10 @@ def calculate_risk(
         oi_end = oi_window[-1][1]
 
         if oi_end > oi_start:
-            score += 1
+            score += 3
             reasons.append("OI растёт")
         elif oi_end < oi_start:
-            score += 1
+            score += 3
             reasons.append("OI падает")
 
         if oi_start > 0:
@@ -70,7 +70,7 @@ def calculate_risk(
 
     # LIQUIDATIONS
     if liquidations > liq_threshold:
-        score += 2
+        score += 3
         reasons.append("Крупные ликвидации")
 
         if liq_sides:
@@ -84,3 +84,4 @@ def calculate_risk(
         direction = max(direction_votes, key=direction_votes.get)
 
     return score, direction, reasons, funding_spike, oi_spike
+
