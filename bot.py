@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.exceptions import BotBlocked
+from aiogram.utils.exceptions import BotBlocked, RetryAfter, NetworkError, TelegramAPIError
 
 import ws_binance as ws
 import risk
@@ -46,6 +46,10 @@ diag_cooldowns = {
 
 ws_task = None
 ws_running = False
+message_queue = asyncio.Queue()
+
+SEND_DELAY_SECONDS = 0.2
+SEND_RETRY_LIMIT = 5
 
 
 # ---------------- KEYBOARD ----------------
@@ -304,10 +308,7 @@ async def global_risk_loop():
                     )
                 
                     for chat in active_chats.copy():
-                        try:
-                            await bot.send_message(chat, text)
-                        except BotBlocked:
-                            active_chats.discard(chat)
+                        await enqueue_message(chat, text)
 
                     log_event("alert_sent", {
                         "ts": now_ts,
@@ -341,12 +342,8 @@ async def global_risk_loop():
                         text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
                 
                     for chat in active_chats.copy():
-                        try:
-                            await bot.send_message(chat, text)
-                        except BotBlocked:
-                            active_chats.discard(chat)
+                        await enqueue_message(chat, text)
 
-                
                     log_event("alert_sent", {
                         "ts": now_ts,
                         "symbol": symbol,
@@ -566,12 +563,12 @@ async def regime_cmd(message: types.Message):
     await message.reply(text)
 
 
-async def send_current_risk(chat_id):
-    lines = [
+async def send_current_risk(chat_id):␊
+    lines = [␊
         f"{display_symbol(s)}: {v[0]} ({v[1] or 'NEUTRAL'})"
-        for s, v in cache.items()
-    ]
-    await bot.send_message(chat_id, "\n".join(lines))
+        for s, v in cache.items()␊
+    ]␊
+    await enqueue_message(chat_id, "\n".join(lines))
 
 
 async def risk_loop_watchdog():
@@ -583,22 +580,48 @@ async def risk_loop_watchdog():
 
         delta = time.time() - LAST_RISK_EVAL_TS
 
-        if delta > 300:  # 5 минут без risk_eval
+        if delta > 330:  # 5 минут без risk_eval
             log_event("system_warning", {
                 "type": "RISK_LOOP_STALL",
                 "last_risk_eval_sec_ago": int(delta),
             })
             for chat in active_chats:
-                try:
-                    await bot.send_message(
-                        chat,
-                        "⚠️ System warning: risk loop stalled. Data may be outdated."
-                    )
-                except:
-                    pass
+                await enqueue_message(
+                    chat,
+                    "⚠️ System warning: risk loop stalled. Data may be outdated."
+                )
+
+
+# ---------------- OUTBOX ----------------
+
+async def enqueue_message(chat_id, text):
+    await message_queue.put({"chat_id": chat_id, "text": text})
+
+
+async def message_worker():
+    while True:
+        payload = await message_queue.get()
+        chat_id = payload["chat_id"]
+        text = payload["text"]
+
+        for attempt in range(1, SEND_RETRY_LIMIT + 1):
+            try:
+                await bot.send_message(chat_id, text)
+                break
+            except BotBlocked:
+                active_chats.discard(chat_id)
+                break
+            except RetryAfter as exc:
+                await asyncio.sleep(exc.timeout)
+            except (NetworkError, TelegramAPIError):
+                backoff = min(2 ** attempt, 30)
+                await asyncio.sleep(backoff)
+        await asyncio.sleep(SEND_DELAY_SECONDS)
+        message_queue.task_done()
 
 
 # ---------------- HEALTH ----------------
+
 
 class PingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -624,10 +647,12 @@ async def on_startup(dp):
     asyncio.create_task(ws_watchdog())
     asyncio.create_task(global_risk_loop())
     asyncio.create_task(risk_loop_watchdog())
+    asyncio.create_task(message_worker())
 
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
