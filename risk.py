@@ -82,6 +82,48 @@ def calculate_risk(
     direction = None
     if direction_votes["LONG"] != direction_votes["SHORT"]:
         direction = max(direction_votes, key=direction_votes.get)
+    risk_driver = detect_risk_driver(
+        funding=funding,
+        funding_spike=funding_spike,
+        long_ratio=long_ratio,
+        oi_spike=oi_spike,
+        liquidations=liquidations,
+        liq_threshold=liq_threshold
+    )
+    
+    return score, direction, reasons, funding_spike, oi_spike, risk_driver
 
-    return score, direction, reasons, funding_spike, oi_spike
+def detect_risk_driver(
+    funding,
+    funding_spike,
+    long_ratio,
+    oi_spike,
+    liquidations,
+    liq_threshold
+):
+    drivers = []
+
+    # CROWD (long/short imbalance)
+    if long_ratio >= 0.7 or long_ratio <= 0.3:
+        drivers.append("CROWD")
+
+    # LIQUIDATIONS
+    if liquidations > liq_threshold:
+        drivers.append("LIQUIDATION")
+
+    # FUNDING
+    if funding_spike:
+        drivers.append("FUNDING")
+
+    # OPEN INTEREST
+    if oi_spike:
+        drivers.append("OI")
+
+    if not drivers:
+        return "UNKNOWN"
+
+    if len(drivers) == 1:
+        return drivers[0]
+
+    return "MIXED"
 
