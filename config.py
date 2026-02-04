@@ -6,17 +6,21 @@ SYMBOLS = [
     "XRPUSDT",
     "BNBUSDT",
     "SOLUSDT",
-    "DOGEUSDT",
-    "ADAUSDT",
-    "LINKUSDT",
-    "LTCUSDT",
-    "BCHUSDT",
     "TRXUSDT",
-    "XLMUSDT",
-    "HBARUSDT",
-    "XMRUSDT",
-    "ZECUSDT",
+    "DOGEUSDT",
+    "BCHUSDT",
+    "ADAUSDT",
     "HYPEUSDT",
+    "LEOUSDT",
+    "XMRUSDT",
+    "CCUSDT",
+    "LINKUSDT",
+    "XLMUSDT",
+    "LTCUSDT",
+    "ZECUSDT"
+    "AVAXUSDT",
+    "SUIUSDT",
+    "HBARUSDT",
 ]
 
 INTERVAL_SECONDS = 300
@@ -48,6 +52,7 @@ LIQ_THRESHOLDS = {
     "AXSUSDT": 50_000,
     "BERAUSDT": 50_000,
 }
+
 
 
 
