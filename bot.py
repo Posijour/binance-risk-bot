@@ -17,7 +17,12 @@ from config import *
 from collections import defaultdict, deque
 from logger import log_event
 
-ALERT_WINDOW_HOURS = 3  # ← можешь менять
+# --- ACTIVITY REGIME CONFIG ---
+ACTIVITY_WINDOW_HOURS = 4
+ACTIVITY_CALM_MAX = 2
+ACTIVITY_FRAGILE_MAX = 5
+
+ALERT_WINDOW_HOURS = 4  # ← можешь менять
 alert_history = defaultdict(deque)
 LAST_RISK_EVAL_TS = 0
 
@@ -197,6 +202,30 @@ def detect_market_regime(state):
 
     return "UNDEFINED"
 
+def detect_activity_regime_live():
+    """
+    Alert-based activity regime (independent from market regime)
+    """
+
+    now = time.time()
+    cutoff = now - ACTIVITY_WINDOW_HOURS * 3600
+
+    alerts_count = 0
+    for q in alert_history.values():
+        alerts_count += sum(1 for ts in q if ts >= cutoff)
+
+    if alerts_count <= ACTIVITY_CALM_MAX:
+        regime = "CALM"
+    elif alerts_count <= ACTIVITY_FRAGILE_MAX:
+        regime = "FRAGILE_CALM"
+    else:
+        regime = "STRESS"
+
+    return {
+        "regime": regime,
+        "alerts": alerts_count,
+        "window_h": ACTIVITY_WINDOW_HOURS,
+    }
 
 
 # ---------------- GLOBAL RISK LOOP ----------------
@@ -482,6 +511,7 @@ async def risk_cmd(message: types.Message):
     f = ws.funding.get(symbol)
 
     if len(parts) >= 3 and parts[2].lower() == "full":
+        activity = detect_activity_regime_live()
         now_ts = int(time.time())
         cutoff = now_ts - ALERT_WINDOW_HOURS * 3600
     
@@ -498,8 +528,13 @@ async def risk_cmd(message: types.Message):
             f"• Funding: {percent_funding(f)}\n"
             f"• Pressure: {build_market_snapshot(symbol).splitlines()[2].replace('Pressure: ', '')}\n\n"
     
+            f"Activity context:\n"
+            f"• BUILDUP alerts (last {activity['window_h']}h): {activity['alerts']}\n"
+            f"• Activity regime: {activity['regime']}\n\n"
+            
             f"Risk activity:\n"
             f"• Buildups (last {ALERT_WINDOW_HOURS}h): {alerts_last}\n\n"
+
     
             f"Interpretation:\n"
             f"Crowded positioning detected.\n"
@@ -520,8 +555,10 @@ async def risk_cmd(message: types.Message):
 
 @dp.message_handler(commands=["regime"])
 async def regime_cmd(message: types.Message):
+    activity = detect_activity_regime_live()
     state = build_market_state()
     regime = detect_market_regime(state)
+
 
     text = (
         f"🌍 Market Regime: {regime}\n\n"
@@ -531,6 +568,12 @@ async def regime_cmd(message: types.Message):
         f"• Long bias: {state['long_bias']}\n"
         f"• Short bias: {state['short_bias']}\n"
         f"• Symbols tracked: {state['symbols']}\n\n"
+    )
+
+    text += (
+        f"Activity (last {activity['window_h']}h):\n"
+        f"• BUILDUP alerts: {activity['alerts']}\n"
+        f"• Activity regime: {activity['regime']}\n\n"
     )
 
     if regime == "CALM":
@@ -652,6 +695,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
