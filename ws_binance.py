@@ -5,6 +5,7 @@ import time
 import websockets
 from collections import deque
 from config import SYMBOLS, WINDOW_SECONDS
+from logger import log_event
 
 funding = {}
 mark_price = {}
@@ -16,6 +17,8 @@ last_update = {}
 trades_window = {s: deque() for s in SYMBOLS}
 liq_window = {s: deque() for s in SYMBOLS}
 oi_window = {s: deque() for s in SYMBOLS}
+trade_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
+liq_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
 
 
 def touch(symbol):
@@ -26,6 +29,22 @@ def cleanup_window(dq):
     now = time.time()
     while dq and now - dq[0][0] > WINDOW_SECONDS:
         dq.popleft()
+
+
+def cleanup_trades(symbol):
+    now = time.time()
+    dq = trades_window[symbol]
+    while dq and now - dq[0][0] > WINDOW_SECONDS:
+        _, qty, side = dq.popleft()
+        trade_totals[symbol][side] = max(0.0, trade_totals[symbol][side] - qty)
+
+
+def cleanup_liq(symbol):
+    now = time.time()
+    dq = liq_window[symbol]
+    while dq and now - dq[0][0] > WINDOW_SECONDS:
+        _, qty, side = dq.popleft()
+        liq_totals[symbol][side] = max(0.0, liq_totals[symbol][side] - qty)
 
 
 async def binance_ws():
@@ -73,14 +92,12 @@ async def binance_ws():
                         side = "short" if data["m"] else "long"
 
                         trades_window[symbol].append((now, qty, side))
-                        cleanup_window(trades_window[symbol])
-
-                        long_vol = sum(q for _, q, d in trades_window[symbol] if d == "long")
-                        short_vol = sum(q for _, q, d in trades_window[symbol] if d == "short")
+                        trade_totals[symbol][side] += qty
+                        cleanup_trades(symbol)
 
                         long_short_ratio[symbol] = {
-                            "long": long_vol,
-                            "short": short_vol
+                            "long": trade_totals[symbol]["long"],
+                            "short": trade_totals[symbol]["short"]
                         }
                         touch(symbol)
 
@@ -89,11 +106,12 @@ async def binance_ws():
                         side = "long" if data["o"]["S"] == "SELL" else "short"
 
                         liq_window[symbol].append((now, qty, side))
-                        cleanup_window(liq_window[symbol])
+                        liq_totals[symbol][side] += qty
+                        cleanup_liq(symbol)
 
                         liq_sides[symbol] = {
-                            "long": sum(q for _, q, s in liq_window[symbol] if s == "long"),
-                            "short": sum(q for _, q, s in liq_window[symbol] if s == "short"),
+                            "long": liq_totals[symbol]["long"],
+                            "short": liq_totals[symbol]["short"],
                         }
 
                         liquidations[symbol] = (
@@ -101,7 +119,12 @@ async def binance_ws():
                         )
                         touch(symbol)
 
-        except Exception:
+        except Exception as exc:
+            log_event("ws_error", {
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "backoff": backoff,
+            })
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
