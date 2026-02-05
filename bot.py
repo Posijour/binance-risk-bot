@@ -554,6 +554,13 @@ async def risk_cmd(message: types.Message):
         return
 
     score, direction, reasons, risk_driver = cache[symbol]
+    
+    display_driver = (
+        risk_driver
+        if risk_driver and score > 0
+        else "NONE"
+    )
+    
     snap = build_market_snapshot(symbol)
     disp = display_symbol(symbol)
     f = ws.funding.get(symbol)
@@ -569,7 +576,7 @@ async def risk_cmd(message: types.Message):
         text = (
             f"{disp}\n\n"
             f"Risk: {score}/10 ({direction or 'NEUTRAL'})\n"
-            f"Risk driver: {risk_driver}\n"
+            f"Risk driver: {display_driver}\n"
             f"Confidence: {meta.confidence_level(meta.calculate_confidence(score, direction, False, False, 0, None, {}))}\n\n"
         
             f"Market context:\n"
@@ -591,13 +598,16 @@ async def risk_cmd(message: types.Message):
         text += (
             f"\nTicker activity:\n"
             f"• Buildups (last {ALERT_WINDOW_HOURS}h): {alerts_last}\n\n"
-        
-            f"Interpretation:\n"
-            f"Crowded positioning detected.\n"
-            f"Asymmetric risk is building.\n\n"
-        
-            f"This is a market risk log, not a forecast."
         )
+        
+        if score > 0:
+            text += (
+                f"Interpretation:\n"
+                f"Crowded positioning detected.\n"
+                f"Asymmetric risk is building.\n\n"
+            )
+
+        text += "This is a market risk log, not a forecast."
 
     
         await message.reply(text)
@@ -825,4 +835,5 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
