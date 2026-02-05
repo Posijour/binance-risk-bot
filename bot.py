@@ -29,6 +29,7 @@ ACTIVITY_WINDOW_HOURS = 4
 ACTIVITY_CALM_MAX = 2
 ACTIVITY_FRAGILE_MAX = 5
 last_activity_regime = None
+last_activity_transition = None
 
 ALERT_WINDOW_HOURS = 4  # ← можешь менять
 alert_history = defaultdict(deque)
@@ -278,10 +279,30 @@ async def global_risk_loop():
             activity = detect_activity_regime_live()
             global last_activity_regime
 
+            global last_activity_regime, last_activity_transition
+
             transition = detect_activity_transition(
                 last_activity_regime,
                 activity["regime"]
             )
+            
+            if transition:
+                last_activity_transition = {
+                    "from": last_activity_regime,
+                    "to": activity["regime"],
+                    "ts": int(time.time()),
+                }
+            
+                log_event("activity_transition", {
+                    "ts": int(time.time()),
+                    "from": last_activity_regime,
+                    "to": activity["regime"],
+                    "alerts": activity["alerts"],
+                    "window_h": activity["window_h"],
+                })
+            
+            last_activity_regime = activity["regime"]
+
             
             if transition:
                 log_event("activity_transition", {
@@ -624,9 +645,24 @@ async def regime_cmd(message: types.Message):
     text += (
         f"Activity (last {activity['window_h']}h):\n"
         f"• BUILDUP alerts: {activity['alerts']}\n"
-        f"• Activity regime: {activity['regime']}\n\n"
+        f"• Activity regime: {activity['regime']}\n"
     )
+    
+    if last_activity_transition:
+        delta_h = int(
+            (time.time() - last_activity_transition["ts"]) / 3600
+        )
+    
+        text += (
+            f"• Last transition: "
+            f"{last_activity_transition['from']} → "
+            f"{last_activity_transition['to']} "
+            f"({delta_h}h ago)\n"
+        )
+    
+    text += "\n"
 
+    # ---- Interpretation ----
     if regime == "CALM":
         text += (
             "Interpretation:\n"
@@ -798,6 +834,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
