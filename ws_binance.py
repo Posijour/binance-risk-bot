@@ -4,6 +4,7 @@ import random
 import time
 import websockets
 from collections import deque
+from os import getenv
 from config import SYMBOLS, WINDOW_SECONDS
 from logger import log_event
 
@@ -21,8 +22,11 @@ trade_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
 liq_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
 last_trade_diag_ts = {s: 0 for s in SYMBOLS}
 
-TRADE_QUEUE_DIAGNOSTIC_MODE = os.getenv("TRADE_QUEUE_DIAGNOSTIC_MODE", "").lower() in ("1", "true", "yes")
-TRADE_QUEUE_DIAGNOSTIC_INTERVAL = int(os.getenv("TRADE_QUEUE_DIAGNOSTIC_INTERVAL", "60"))
+TRADE_QUEUE_DIAGNOSTIC_MODE = getenv("TRADE_QUEUE_DIAGNOSTIC_MODE", "").lower() in ("1", "true", "yes")
+try:
+    TRADE_QUEUE_DIAGNOSTIC_INTERVAL = max(1, int(getenv("TRADE_QUEUE_DIAGNOSTIC_INTERVAL", "60")))
+except ValueError:
+    TRADE_QUEUE_DIAGNOSTIC_INTERVAL = 60
 
 
 def touch(symbol):
@@ -129,7 +133,6 @@ async def binance_ws():
                                 last_trade_diag_ts[symbol] = now
 
                         touch(symbol)
-
 
                     elif "forceOrder" in stream:
                         qty = float(data["o"]["q"])
