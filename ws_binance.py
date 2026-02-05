@@ -19,6 +19,10 @@ liq_window = {s: deque() for s in SYMBOLS}
 oi_window = {s: deque() for s in SYMBOLS}
 trade_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
 liq_totals = {s: {"long": 0.0, "short": 0.0} for s in SYMBOLS}
+last_trade_diag_ts = {s: 0 for s in SYMBOLS}
+
+TRADE_QUEUE_DIAGNOSTIC_MODE = os.getenv("TRADE_QUEUE_DIAGNOSTIC_MODE", "").lower() in ("1", "true", "yes")
+TRADE_QUEUE_DIAGNOSTIC_INTERVAL = int(os.getenv("TRADE_QUEUE_DIAGNOSTIC_INTERVAL", "60"))
 
 
 def touch(symbol):
@@ -34,9 +38,12 @@ def cleanup_window(dq):
 def cleanup_trades(symbol):
     now = time.time()
     dq = trades_window[symbol]
+    removed = 0
     while dq and now - dq[0][0] > WINDOW_SECONDS:
         _, qty, side = dq.popleft()
         trade_totals[symbol][side] = max(0.0, trade_totals[symbol][side] - qty)
+        removed += 1
+    return removed
 
 
 def cleanup_liq(symbol):
@@ -93,13 +100,36 @@ async def binance_ws():
 
                         trades_window[symbol].append((now, qty, side))
                         trade_totals[symbol][side] += qty
-                        cleanup_trades(symbol)
+                        removed = cleanup_trades(symbol)
 
                         long_short_ratio[symbol] = {
                             "long": trade_totals[symbol]["long"],
                             "short": trade_totals[symbol]["short"]
                         }
+
+                        if TRADE_QUEUE_DIAGNOSTIC_MODE:
+                            last_diag = last_trade_diag_ts[symbol]
+                            if now - last_diag >= TRADE_QUEUE_DIAGNOSTIC_INTERVAL:
+                                q = trades_window[symbol]
+                                total = long_short_ratio[symbol]["long"] + long_short_ratio[symbol]["short"]
+                                long_share = (long_short_ratio[symbol]["long"] / total) if total else 0.5
+                                oldest_age = round(now - q[0][0], 2) if q else 0.0
+
+                                log_event("trade_queue_diagnostic", {
+                                    "ts": int(now),
+                                    "symbol": symbol,
+                                    "window_seconds": WINDOW_SECONDS,
+                                    "queue_len": len(q),
+                                    "oldest_trade_age_sec": oldest_age,
+                                    "removed_on_cleanup": removed,
+                                    "long_qty": round(long_short_ratio[symbol]["long"], 8),
+                                    "short_qty": round(long_short_ratio[symbol]["short"], 8),
+                                    "long_ratio": round(long_share, 6),
+                                })
+                                last_trade_diag_ts[symbol] = now
+
                         touch(symbol)
+
 
                     elif "forceOrder" in stream:
                         qty = float(data["o"]["q"])
@@ -128,3 +158,4 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
+
