@@ -136,11 +136,18 @@ async def binance_ws():
                         touch(symbol)
 
                     elif "forceOrder" in stream:
-                        qty = float(data["o"]["q"])
-                        side = "long" if data["o"]["S"] == "SELL" else "short"
+                        order = data.get("o", {})
+                        qty = float(order.get("q", 0) or 0)
+                        side = "long" if order.get("S") == "SELL" else "short"
 
-                        liq_window[symbol].append((now, qty, side))
-                        liq_totals[symbol][side] += qty
+                        liq_price = float(order.get("ap") or order.get("p") or 0)
+                        if liq_price <= 0:
+                            liq_price = mark_price.get(symbol, 0)
+
+                        liq_notional = qty * liq_price
+
+                        liq_window[symbol].append((now, liq_notional, side))
+                        liq_totals[symbol][side] += liq_notional
                         cleanup_liq(symbol)
 
                         liq_sides[symbol] = {
@@ -162,7 +169,3 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
-
-
-
-
