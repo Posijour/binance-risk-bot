@@ -1,3 +1,5 @@
+from config import FUNDING_EXTREME_THRESHOLD, FUNDING_SPIKE_THRESHOLD, OI_SPIKE_THRESHOLD
+
 def calculate_risk(
     funding,
     prev_funding,
@@ -14,12 +16,12 @@ def calculate_risk(
 
     # FUNDING
     if funding is not None:
-        if funding > 0.02:
+        if funding > FUNDING_EXTREME_THRESHOLD:
             score += 3
             direction_votes["LONG"] += 1
             reasons.append("Funding экстремально положительный")
 
-        if funding < -0.02:
+        if funding < -FUNDING_EXTREME_THRESHOLD:
             score += 3
             direction_votes["SHORT"] += 1
             reasons.append("Funding экстремально отрицательный")
@@ -27,7 +29,7 @@ def calculate_risk(
     funding_spike = (
         funding is not None
         and prev_funding is not None
-        and abs(funding - prev_funding) > 0.003
+        and abs(funding - prev_funding) > FUNDING_SPIKE_THRESHOLD
     )
 
     # LONG / SHORT
@@ -63,7 +65,7 @@ def calculate_risk(
             reasons.append("OI падает")
 
         if oi_start > 0:
-            if abs(oi_end - oi_start) / oi_start > 0.03:
+            if abs(oi_end - oi_start) / oi_start > OI_SPIKE_THRESHOLD:
                 oi_spike = True
                 if price is not None:
                     reasons.append("OI spike при движении цены")
@@ -126,4 +128,5 @@ def detect_risk_driver(
         return drivers[0]
 
     return "MIXED"
+
 
