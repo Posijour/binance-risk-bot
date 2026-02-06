@@ -25,7 +25,7 @@ SYMBOLS = [
 
 OPEN_INTEREST_STREAMS = [
     stream.strip()
-    for stream in os.getenv("OPEN_INTEREST_STREAMS", "openInterest@1s").split(",")
+    for stream in os.getenv("OPEN_INTEREST_STREAMS", "openInterest").split(",")
     if stream.strip()
 ]
 
@@ -58,6 +58,7 @@ LIQ_THRESHOLDS = {
     "ZECUSDT": 2_000_000,
     "HYPEUSDT": 1_500_000,
 }
+
 
 
 
