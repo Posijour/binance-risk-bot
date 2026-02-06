@@ -3,6 +3,7 @@ import os
 import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from oi_binance import BinanceOIPoller
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
@@ -21,9 +22,10 @@ from logger import log_event
 from datetime import datetime, timedelta, timezone
 
 LOG_FILE_PATH = "bot_events.jsonl"
-
 LOG_SEND_HOUR_UTC_PLUS_2 = 13
 LOG_TIMEZONE = timezone(timedelta(hours=2))
+
+oi_poller = BinanceOIPoller(SYMBOLS, period="5m", window=12)
 
 # --- ACTIVITY REGIME CONFIG ---
 ACTIVITY_WINDOW_HOURS = 4
@@ -135,7 +137,7 @@ async def ws_watchdog():
 # ---------------- SNAPSHOT ----------------
 
 def build_market_snapshot(symbol):
-    oi_vals = ws.oi_window.get(symbol, [])
+    oi_vals = oi_poller.oi_window.get(symbol, [])
     if len(oi_vals) >= 2 and oi_vals[0][1] > 0:
         oi_txt = f"{(oi_vals[-1][1] - oi_vals[0][1]) / oi_vals[0][1] * 100:+.1f}%"
     else:
@@ -310,7 +312,7 @@ async def global_risk_loop():
                     last_funding[symbol] = f
                     last_funding_ts[symbol] = now
 
-                oi_vals = ws.oi_window.get(symbol, [])
+                oi_vals = oi_poller.oi_window.get(symbol, [])
                 oi_for_risk = oi_vals
 
                 if len(oi_vals) == 1:
@@ -356,6 +358,8 @@ async def global_risk_loop():
                     "risk_driver": risk_driver,
                     "funding": f,
                     "funding_spike": funding_spike,
+                    "log_oi_source": "binance_rest",
+                    "log_oi_points": len(oi_vals),
                     "oi_change_pct": oi_change_pct,
                     "oi_spike": oi_spike,
                     "oi_window_len": len(oi_vals),
@@ -845,16 +849,21 @@ def start_http():
 
 async def oi_loop():
     while True:
-        oi_poller.update()
+        try:
+            oi_poller.update()
+        except Exception as e:
+            log_event("oi_poll_error", {
+                "ts": int(time.time()),
+                "error": str(e),
+            })
         await asyncio.sleep(60)
+
 
 # ---------------- STARTUP ----------------
 async def on_startup(dp):
     global ws_task
     await bot.delete_webhook(drop_pending_updates=True)
     ws_task = asyncio.create_task(start_ws_safe())
-    from oi_binance import BinanceOIPoller
-    oi_poller = BinanceOIPoller(SYMBOLS)
     asyncio.create_task(ws_watchdog())
     asyncio.create_task(global_risk_loop())
     asyncio.create_task(risk_loop_watchdog())
@@ -865,5 +874,6 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
