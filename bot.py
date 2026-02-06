@@ -356,19 +356,31 @@ async def global_risk_loop():
                 score, direction, reasons, funding_spike, oi_spike, risk_driver = result
                 cache[symbol] = (score, direction, reasons, risk_driver)
 
+                funding_delta = abs(f - pf) if (f is not None and pf is not None) else None
+                oi_change_pct = None
+                if len(oi_vals) >= 2 and oi_vals[0][1] > 0:
+                    oi_change_pct = abs(oi_vals[-1][1] - oi_vals[0][1]) / oi_vals[0][1]
+
                 log_event("risk_eval", {
                     "symbol": symbol,
                     "risk": score,
                     "direction": direction,
                     "risk_driver": risk_driver,
                     "funding": f,
-                    "oi_spike": oi_spike,
+                    "funding_prev": pf,
+                    "funding_delta": funding_delta,
+                    "funding_spike_threshold": FUNDING_SPIKE_THRESHOLD,
                     "funding_spike": funding_spike,
+                    "oi_change_pct": oi_change_pct,
+                    "oi_spike_threshold": OI_SPIKE_THRESHOLD,
+                    "oi_spike": oi_spike,
                     "liq": liq,
+                    "liq_threshold": LIQ_THRESHOLDS[symbol],
                     "long_ratio_current": round(current_ratio, 6),
                     "long_ratio_used": round(pressure_ratio, 6),
                     "long_ratio_source": ratio_source,
                 })
+
 
                 global LAST_RISK_EVAL_TS
                 LAST_RISK_EVAL_TS = int(time.time())
@@ -909,6 +921,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
