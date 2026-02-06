@@ -52,21 +52,23 @@ def calculate_risk(
         reasons.append("Перекос в шорты")
 
     # OI TREND + SPIKE
+    # OI TREND + SPIKE
     oi_spike = False
     if len(oi_window) >= 2:
         oi_start = oi_window[0][1]
         oi_end = oi_window[-1][1]
 
-        if oi_end > oi_start:
-            score += 3
-            reasons.append("OI растёт")
-        elif oi_end < oi_start:
-            score += 3
-            reasons.append("OI падает")
-
         if oi_start > 0:
-            if abs(oi_end - oi_start) / oi_start > OI_SPIKE_THRESHOLD:
+            oi_change = (oi_end - oi_start) / oi_start
+            if abs(oi_change) > OI_SPIKE_THRESHOLD:
                 oi_spike = True
+                if oi_change > 0:
+                    score += 3
+                    reasons.append("OI растёт")
+                elif oi_change < 0:
+                    score += 3
+                    reasons.append("OI падает")
+
                 if price is not None:
                     reasons.append("OI spike при движении цены")
 
@@ -133,6 +135,7 @@ def detect_risk_driver(
         return drivers[0]
 
     return "MIXED"
+
 
 
 
