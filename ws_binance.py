@@ -15,6 +15,8 @@ liquidations = {}
 liq_sides = {}
 last_update = {}
 last_force_order_ts = {}
+oi_stream_last_ts = {}
+last_oi_stream_log_ts = 0
 
 trades_window = {s: deque() for s in SYMBOLS}
 liq_window = {s: deque() for s in SYMBOLS}
@@ -76,6 +78,7 @@ async def open_interest_ws(symbol, suffix):
     stream_symbol = symbol.lower()
     stream_suffix = suffix
     url = f"wss://fstream.binance.com/ws/{stream_symbol}@{stream_suffix}"
+    stream_name = f"{stream_symbol}@{stream_suffix}"
 
     while True:
         try:
@@ -89,6 +92,7 @@ async def open_interest_ws(symbol, suffix):
                     oi = data.get("oi")
                     if oi is None:
                         continue
+                    oi_stream_last_ts[stream_name] = int(time.time())
                     _append_open_interest(msg_symbol, oi)
         except Exception as exc:
             log_event("ws_error", {
@@ -132,6 +136,7 @@ async def binance_ws():
         ]
 
     url = f"wss://fstream.binance.com/stream?streams={'/'.join(streams)}"
+    global last_oi_stream_log_ts
     backoff = 1
     max_backoff = 60
     while True:
@@ -155,6 +160,7 @@ async def binance_ws():
                         touch(symbol)
 
                     elif "openInterest" in stream:
+                        oi_stream_last_ts[stream] = int(now)
                         if isinstance(data, list):
                             for item in data:
                                 item_symbol = item.get("s", "").upper()
@@ -166,7 +172,6 @@ async def binance_ws():
                             oi = data.get("oi")
                             if oi is not None:
                                 _append_open_interest(symbol, oi, now)
-
                     elif "aggTrade" in stream:
                         qty = float(data["q"])
                         side = "short" if data["m"] else "long"
@@ -229,6 +234,13 @@ async def binance_ws():
                         )
                         last_force_order_ts[symbol] = int(now)
                         touch(symbol)
+                    if now - last_oi_stream_log_ts >= 300:
+                        log_event("oi_stream_diagnostic", {
+                            "ts": int(now),
+                            "stream_count": len(oi_stream_last_ts),
+                            "streams": dict(sorted(oi_stream_last_ts.items())),
+                        })
+                        last_oi_stream_log_ts = now
 
         except Exception as exc:
             log_event("ws_error", {
@@ -239,7 +251,3 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
-
-
-
-
