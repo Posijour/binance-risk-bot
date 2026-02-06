@@ -57,11 +57,6 @@ prev_funding = {}
 last_funding_ts = {}
 last_oi_snapshot = {}
 
-diag_cooldowns = {
-    "oi": {},
-    "liq": {}
-}
-
 ws_task = None
 ws_running = False
 MESSAGE_QUEUE_MAXSIZE = 2000
@@ -69,8 +64,6 @@ message_queue = asyncio.Queue(maxsize=MESSAGE_QUEUE_MAXSIZE)
 
 SEND_DELAY_SECONDS = 0.2
 SEND_RETRY_LIMIT = 5
-RISK_DIAGNOSTIC_MODE = os.getenv("RISK_DIAGNOSTIC_MODE", "").lower() in ("1", "true", "yes")
-
 
 # ---------------- KEYBOARD ----------------
 
@@ -335,7 +328,6 @@ async def global_risk_loop():
                 current_ratio = ls["long"] / total if total else 0.5
 
                 pressure_ratio = current_ratio
-                ratio_source = "current"
 
                 price = getattr(ws, "mark_price", {}).get(symbol)
                 liq_sides = getattr(ws, "liq_sides", {}).get(symbol, {})
@@ -353,13 +345,9 @@ async def global_risk_loop():
                 score, direction, reasons, funding_spike, oi_spike, risk_driver = result
                 cache[symbol] = (score, direction, reasons, risk_driver)
 
-                funding_delta = abs(f - pf) if (f is not None and pf is not None) else None
                 oi_change_pct = 0.0
                 if len(oi_for_risk) >= 2 and oi_for_risk[0][1] > 0:
                     oi_change_pct = abs(oi_for_risk[-1][1] - oi_for_risk[0][1]) / oi_for_risk[0][1]
-
-                last_oi_ts = int(oi_vals[-1][0]) if oi_vals else None
-                last_force_order_ts = getattr(ws, "last_force_order_ts", {}).get(symbol)
 
                 log_event("risk_eval", {
                     "symbol": symbol,
@@ -367,22 +355,13 @@ async def global_risk_loop():
                     "direction": direction,
                     "risk_driver": risk_driver,
                     "funding": f,
-                    "funding_prev": pf,
-                    "funding_delta": funding_delta,
-                    "funding_spike_threshold": FUNDING_SPIKE_THRESHOLD,
                     "funding_spike": funding_spike,
                     "oi_change_pct": oi_change_pct,
-                    "oi_points": len(oi_for_risk),
-                    "oi_spike_threshold": OI_SPIKE_THRESHOLD,
                     "oi_spike": oi_spike,
                     "oi_window_len": len(oi_vals),
-                    "last_oi_ts": last_oi_ts,
-                    "last_force_order_ts": last_force_order_ts,
                     "liq": liq,
                     "liq_threshold": LIQ_THRESHOLDS[symbol],
                     "long_ratio_current": round(current_ratio, 6),
-                    "long_ratio_used": round(pressure_ratio, 6),
-                    "long_ratio_source": ratio_source,
                 })
 
                 global LAST_RISK_EVAL_TS
@@ -417,52 +396,7 @@ async def global_risk_loop():
                     and confidence >= 3
                 )
                 buildup_candidate = score >= EARLY_ALERT_LEVEL
-
-                if RISK_DIAGNOSTIC_MODE:
-                    quality_level = quality.get("level", "UNKNOWN")
-                    queue_size = message_queue.qsize()
-                    queue_capacity = MESSAGE_QUEUE_MAXSIZE
-                    queue_fill_pct = round((queue_size / queue_capacity) * 100, 1) if queue_capacity else 0
-
-                    no_alert_reasons = []
-                    if quality_level == "LOW":
-                        no_alert_reasons.append("quality_low")
-                    if not buildup_candidate:
-                        no_alert_reasons.append("score_below_early_threshold")
-                    if score >= HARD_ALERT_LEVEL and not direction:
-                        no_alert_reasons.append("hard_missing_direction")
-                    if score >= HARD_ALERT_LEVEL and confidence < 3:
-                        no_alert_reasons.append("hard_low_confidence")
-
-                    log_event("risk_diagnostic", {
-                        "ts": int(time.time()),
-                        "symbol": symbol,
-                        "score": score,
-                        "direction": direction,
-                        "risk_driver": risk_driver,
-                        "long_ratio": round(pressure_ratio, 4),
-                        "long_ratio_current": round(current_ratio, 4),
-                        "long_ratio_source": ratio_source,
-                        "long_percent": round(pressure_ratio * 100, 2),
-                        "funding": f,
-                        "funding_spike": funding_spike,
-                        "oi_points": len(oi_vals),
-                        "oi_spike": oi_spike,
-                        "liquidations": liq,
-                        "liq_threshold": LIQ_THRESHOLDS[symbol],
-                        "quality": quality_level,
-                        "confidence": confidence,
-                        "confidence_level": conf_level,
-                        "early_threshold": EARLY_ALERT_LEVEL,
-                        "hard_threshold": HARD_ALERT_LEVEL,
-                        "buildup_candidate": buildup_candidate,
-                        "hard_candidate": hard_candidate,
-                        "no_alert_reasons": no_alert_reasons,
-                        "queue_size": queue_size,
-                        "queue_capacity": queue_capacity,
-                        "queue_fill_pct": queue_fill_pct,
-                    })
-
+                
                 now_ts = int(time.time())
                 
                 # ---------- HARD ALERT ----------
@@ -924,3 +858,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
