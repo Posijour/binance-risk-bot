@@ -843,19 +843,27 @@ class PingHandler(BaseHTTPRequestHandler):
 def start_http():
     HTTPServer(("0.0.0.0", 8080), PingHandler).serve_forever()
 
+async def oi_loop():
+    while True:
+        oi_poller.update()
+        await asyncio.sleep(60)
 
 # ---------------- STARTUP ----------------
 async def on_startup(dp):
     global ws_task
     await bot.delete_webhook(drop_pending_updates=True)
     ws_task = asyncio.create_task(start_ws_safe())
+    from oi_binance import BinanceOIPoller
+    oi_poller = BinanceOIPoller(SYMBOLS)
     asyncio.create_task(ws_watchdog())
     asyncio.create_task(global_risk_loop())
     asyncio.create_task(risk_loop_watchdog())
     asyncio.create_task(message_worker())
     asyncio.create_task(daily_log_scheduler())
+    asyncio.create_task(oi_loop())
     
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
