@@ -338,8 +338,6 @@ async def global_risk_loop():
                         pressure_ratio = max_ratio
                         ratio_source = "interval_max"
 
-                    extremes["min"] = current_ratio
-                    extremes["max"] = current_ratio
                     extremes["updated_ts"] = int(now)
 
                 price = getattr(ws, "mark_price", {}).get(symbol)
@@ -911,6 +909,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
