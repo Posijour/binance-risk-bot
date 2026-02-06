@@ -412,10 +412,7 @@ async def global_risk_loop():
                         f"Confidence: {conf_level}"
                     )
                 
-                    for chat in active_chats.copy():
-                        await enqueue_message(chat, text)
-
-                    log_event("alert_sent", {
+                    alert_meta = {
                         "ts": now_ts,
                         "symbol": symbol,
                         "risk": score,
@@ -424,7 +421,10 @@ async def global_risk_loop():
                         "type": "HARD",
                         "chat_id": "broadcast",
                         "risk_driver": risk_driver,
-                    })
+                    }
+                    for chat in active_chats.copy():
+                        await enqueue_message(chat, text, meta=alert_meta)
+
                 
                 # ---------- BUILDUP ALERT ----------
                 elif score >= EARLY_ALERT_LEVEL:
@@ -446,10 +446,7 @@ async def global_risk_loop():
                     if conf_level in ("MEDIUM", "HIGH") and reasons:
                         text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
                 
-                    for chat in active_chats.copy():
-                        await enqueue_message(chat, text)
-
-                    log_event("alert_sent", {
+                    alert_meta = {
                         "ts": now_ts,
                         "symbol": symbol,
                         "risk": score,
@@ -458,7 +455,9 @@ async def global_risk_loop():
                         "type": "BUILDUP",
                         "chat_id": "broadcast",
                         "risk_driver": risk_driver,
-                    })
+                    }
+                    for chat in active_chats.copy():
+                        await enqueue_message(chat, text, meta=alert_meta)
                     
             except Exception as e:
                 print("RISK LOOP ERROR:", e, flush=True)
@@ -745,8 +744,8 @@ async def risk_loop_watchdog():
 
 # ---------------- OUTBOX ----------------
 
-async def enqueue_message(chat_id, text):
-    payload = {"chat_id": chat_id, "text": text}
+async def enqueue_message(chat_id, text, meta=None):
+    payload = {"chat_id": chat_id, "text": text, "meta": meta}
     try:
         message_queue.put_nowait(payload)
     except asyncio.QueueFull:
@@ -761,10 +760,15 @@ async def message_worker():
         payload = await message_queue.get()
         chat_id = payload["chat_id"]
         text = payload["text"]
+        meta = payload.get("meta")
 
+        sent = False
         for attempt in range(1, SEND_RETRY_LIMIT + 1):
             try:
                 await bot.send_message(chat_id, text)
+                sent = True
+                if meta:
+                    log_event("alert_sent", meta)
                 break
             except BotBlocked:
                 active_chats.discard(chat_id)
@@ -774,6 +778,8 @@ async def message_worker():
             except (NetworkError, TelegramAPIError):
                 backoff = min(2 ** attempt, 30)
                 await asyncio.sleep(backoff)
+        if meta and not sent:
+            log_event("alert_fail", meta)
         await asyncio.sleep(SEND_DELAY_SECONDS)
         message_queue.task_done()
 
@@ -874,6 +880,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
