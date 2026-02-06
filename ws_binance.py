@@ -51,6 +51,17 @@ def cleanup_trades(symbol):
     return removed
 
 
+def _append_open_interest(symbol, oi_value, ts=None):
+    if symbol not in SYMBOLS:
+        return
+    now = ts or time.time()
+    oi_window[symbol].append((now, float(oi_value)))
+    cleanup_window(oi_window[symbol])
+    touch(symbol)
+
+
+
+
 def cleanup_liq(symbol):
     now = time.time()
     dq = liq_window[symbol]
@@ -78,11 +89,7 @@ async def open_interest_ws(symbol, suffix):
                     oi = data.get("oi")
                     if oi is None:
                         continue
-                    now = time.time()
-                    oi = float(oi)
-                    oi_window[msg_symbol].append((now, oi))
-                    cleanup_window(oi_window[msg_symbol])
-                    touch(msg_symbol)
+                    _append_open_interest(msg_symbol, oi)
         except Exception as exc:
             log_event("ws_error", {
                 "error_type": type(exc).__name__,
@@ -111,10 +118,11 @@ async def binance_ws():
         s = s.lower()
         oi_streams = []
         if not OI_USE_SINGLE_STREAM:
-            oi_streams = [
-                f"{s}@{suffix}"
-                for suffix in OPEN_INTEREST_STREAMS
-            ]
+            for suffix in OPEN_INTEREST_STREAMS:
+                if suffix.startswith("!"):
+                    oi_streams.append(suffix)
+                else:
+                    oi_streams.append(f"{s}@{suffix}")
 
         streams += [
             f"{s}@markPrice@1s",
@@ -147,10 +155,17 @@ async def binance_ws():
                         touch(symbol)
 
                     elif "openInterest" in stream:
-                        oi = float(data["oi"])
-                        oi_window[symbol].append((now, oi))
-                        cleanup_window(oi_window[symbol])
-                        touch(symbol)
+                        if isinstance(data, list):
+                            for item in data:
+                                item_symbol = item.get("s", "").upper()
+                                oi = item.get("oi")
+                                if not item_symbol or oi is None:
+                                    continue
+                                _append_open_interest(item_symbol, oi, now)
+                        else:
+                            oi = data.get("oi")
+                            if oi is not None:
+                                _append_open_interest(symbol, oi, now)
 
                     elif "aggTrade" in stream:
                         qty = float(data["q"])
@@ -224,5 +239,7 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
+
+
 
 
