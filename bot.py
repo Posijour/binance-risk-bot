@@ -36,6 +36,7 @@ last_activity_transition = None
 
 ALERT_WINDOW_HOURS = 4  # ← можешь менять
 alert_history = defaultdict(deque)
+recorded_alert_ids = {}
 LAST_RISK_EVAL_TS = 0
 
 
@@ -84,6 +85,30 @@ def normalize_symbol(user_input: str) -> str:
 
 def display_symbol(symbol: str) -> str:
     return symbol.replace("USDT", "")
+
+
+# ---------------- ALERT HELPERS ----------------
+
+def record_alert_if_first(meta):
+    if not meta:
+        return
+    event_id = meta.get("event_id")
+    symbol = meta.get("symbol")
+    if not event_id or not symbol:
+        return
+    ts = meta.get("ts") or int(time.time())
+    if event_id in recorded_alert_ids:
+        return
+    recorded_alert_ids[event_id] = ts
+
+    cutoff = ts - ALERT_WINDOW_HOURS * 3600
+    alert_history[symbol].append(ts)
+    while alert_history[symbol] and alert_history[symbol][0] < cutoff:
+        alert_history[symbol].popleft()
+
+    stale_ids = [key for key, value in recorded_alert_ids.items() if value < cutoff]
+    for key in stale_ids:
+        recorded_alert_ids.pop(key, None)
 
 
 # ---------------- FUNDING HELPERS ----------------
@@ -419,21 +444,21 @@ async def global_risk_loop():
                         "direction": direction,
                         "confidence": confidence,
                         "type": "HARD",
+                        "event_id": f"{symbol}:{now_ts}:HARD",
                         "chat_id": "broadcast",
                         "risk_driver": risk_driver,
                     }
+                    
                     for chat in active_chats.copy():
                         await enqueue_message(chat, text, meta=alert_meta)
 
                 
                 # ---------- BUILDUP ALERT ----------
                 elif score >= EARLY_ALERT_LEVEL:
-                    alert_history[symbol].append(now_ts)
-                
                     cutoff = now_ts - ALERT_WINDOW_HOURS * 3600
                     while alert_history[symbol] and alert_history[symbol][0] < cutoff:
                         alert_history[symbol].popleft()
-                
+
                     symbol_alerts_count = len(alert_history[symbol])
                 
                     text = (
@@ -453,6 +478,7 @@ async def global_risk_loop():
                         "direction": direction,
                         "confidence": confidence,
                         "type": "BUILDUP",
+                        "event_id": f"{symbol}:{now_ts}:BUILDUP",
                         "chat_id": "broadcast",
                         "risk_driver": risk_driver,
                     }
@@ -768,6 +794,7 @@ async def message_worker():
                 await bot.send_message(chat_id, text)
                 sent = True
                 if meta:
+                    record_alert_if_first(meta)
                     log_event("alert_sent", meta)
                 break
             except BotBlocked:
@@ -880,6 +907,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
