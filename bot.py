@@ -758,7 +758,7 @@ async def risk_loop_watchdog():
         if delta_sec > 330:  # 5 минут без risk_eval
             log_event("system_warning", {
                 "type": "RISK_LOOP_STALL",
-                "last_risk_eval_sec_ago": int(delta),
+                "last_risk_eval_sec_ago": int(delta_sec),
             })
             for chat in active_chats:
                 await enqueue_message(
@@ -906,3 +906,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
