@@ -328,7 +328,11 @@ async def global_risk_loop():
         for symbol in SYMBOLS:
             try:
                 now = time.time()
-
+                now = time.time()
+                now_ts = int(now)
+                now_ts_ms = int(now * 1000)
+                now_iso = datetime.utcfromtimestamp(now).isoformat() + "Z"
+                
                 f = ws.funding.get(symbol)
                 pf = last_funding.get(symbol)
 
@@ -377,13 +381,15 @@ async def global_risk_loop():
                     oi_change_pct = abs(oi_for_risk[-1][1] - oi_for_risk[0][1]) / oi_for_risk[0][1]
 
                 log_event("risk_eval", {
+                    "ts_unix": now_ts,
+                    "ts_unix_ms": now_ts_ms,
+                    "ts_iso": now_iso,
                     "symbol": symbol,
                     "risk": score,
                     "direction": direction,
                     "risk_driver": risk_driver,
                     "funding": f,
                     "funding_spike": funding_spike,
-                    "log_oi_source": "binance_rest",
                     "log_oi_points": len(oi_vals),
                     "oi_change_pct": oi_change_pct,
                     "oi_spike": oi_spike,
@@ -909,6 +915,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
