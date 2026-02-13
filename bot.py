@@ -388,6 +388,7 @@ async def global_risk_loop():
                     risk_eval_payload = {
                         "ts_unix_ms": now_ms,
                         "symbol": symbol,
+                        "risk": score,
                         "funding": f,
                         "price": price,
                     }
@@ -920,6 +921,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
