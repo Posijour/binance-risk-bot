@@ -4,9 +4,15 @@ import os
 import time
 from threading import Lock
 
+import requests
+
 _LOG_TO_FILE = os.getenv("LOG_TO_FILE", "1").lower() in ("1", "true", "yes")
 _LOG_TO_STDOUT = os.getenv("LOG_TO_STDOUT", "1").lower() in ("1", "true", "yes")
 _LOG_FILE = os.getenv("LOG_FILE_PATH", "bot_events.jsonl")
+_SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+_SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+_SUPABASE_LOGS_TABLE = os.getenv("SUPABASE_LOGS_TABLE", "logs")
+_LOG_TO_SUPABASE = bool(_SUPABASE_URL and _SUPABASE_KEY)
 
 _lock = Lock()
 
@@ -34,3 +40,28 @@ def log_event(event_type: str, payload: dict):
                 f.write(line + "\n")
         if _LOG_TO_STDOUT:
             print(line, flush=True)
+    if _LOG_TO_SUPABASE:
+        try:
+            resp = requests.post(
+                f"{_SUPABASE_URL}/rest/v1/{_SUPABASE_LOGS_TABLE}",
+                headers={
+                    "apikey": _SUPABASE_KEY,
+                    "Authorization": f"Bearer {_SUPABASE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+                json={
+                    "ts": record["ts"],
+                    "event": event_type,
+                    "symbol": payload.get("symbol"),
+                    "data": payload,
+                },
+                timeout=5,
+            )
+            if resp.status_code >= 300:
+                print(
+                    f"SUPABASE ERROR {resp.status_code}: {resp.text}",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"SUPABASE EXCEPTION: {exc}", flush=True)
