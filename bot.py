@@ -21,6 +21,38 @@ from logger import log_event, now_ts_ms
 
 from datetime import datetime, timedelta, timezone
 
+import requests
+
+SUPABASE_URL = "https://qcusrlmueapuqbjwuwvh.supabase.co"
+SUPABASE_KEY = "sb_publishable_VsMaZGz98nm5lSQZJ-g-kQ_bUOfSO_r"
+
+def send_to_db(event, payload):
+    try:
+        r = requests.post(
+            f"{SUPABASE_URL}/rest/v1/logs",
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            },
+            json={
+                "ts": int(time.time() * 1000),
+                "event": event,
+                "symbol": payload.get("symbol"),
+                "data": payload
+            },
+            timeout=5
+        )
+
+        # ВРЕМЕННО — для проверки
+        if r.status_code >= 300:
+            print("SUPABASE ERROR", r.status_code, r.text, flush=True)
+
+    except Exception as e:
+        print("SUPABASE EXCEPTION", e, flush=True)
+
+
 LOG_FILE_PATH = "bot_events.jsonl"
 LOG_SEND_HOUR_UTC_PLUS_2 = 13
 LOG_TIMEZONE = timezone(timedelta(hours=2))
@@ -375,7 +407,7 @@ async def global_risk_loop():
                 if len(oi_for_risk) >= 2 and oi_for_risk[0][1] > 0:
                     oi_change_pct = abs(oi_for_risk[-1][1] - oi_for_risk[0][1]) / oi_for_risk[0][1]
 
-                log_event("risk_eval", {
+                payload = {
                     "ts_unix_ms": now_ms,
                     "symbol": symbol,
                     "risk": score,
@@ -383,15 +415,14 @@ async def global_risk_loop():
                     "risk_driver": risk_driver,
                     "funding": f,
                     "funding_spike": funding_spike,
-                    "log_oi_points": len(oi_vals),
-                    "oi_change_pct": oi_change_pct,
                     "oi_spike": oi_spike,
-                    "oi_window_len": len(oi_vals),
                     "liq": liq,
-                    "liq_threshold": LIQ_THRESHOLDS[symbol],
-                    "long_ratio_current": round(current_ratio, 6),
                     "price": price,
-                })
+                }
+                
+                log_event("risk_eval", payload)
+                send_to_db("risk_eval", payload)
+
 
                 global LAST_RISK_EVAL_TS
                 LAST_RISK_EVAL_TS = now_ms
@@ -906,4 +937,5 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
