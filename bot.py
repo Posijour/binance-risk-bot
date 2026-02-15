@@ -564,7 +564,7 @@ async def global_risk_loop():
 
         await asyncio.sleep(INTERVAL_SECONDS)
 
-def what_to_watch(regime, state):
+def what_to_watch_now(regime, state):
     if regime == "CALM":
         return [
             "Sudden increase in risk buildups",
@@ -1021,16 +1021,3 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
-
-
-
-
-
-
-
-
-
-
-
-
-
