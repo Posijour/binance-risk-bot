@@ -56,6 +56,13 @@ last_regime_ts = 0
 current_market_regime = "UNKNOWN"
 ACTIVITY_REGIME_INTERVAL = 900  # 15 минут
 last_activity_ts = 0
+STRESS_CONFIRM_TICKS = 3
+STRESS_EXIT_TICKS = 2
+stress_confirm_counter = 0
+stress_exit_counter = 0
+CROWD_CONFIRM_TICKS = 2
+crowd_confirm_counter = 0
+
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -242,15 +249,24 @@ def build_market_state():
 
 
 def detect_market_regime(state):
+    avg_risk = state["avg_risk"]
     buildups = state["risk_buildups"]
+    alerts = state["risk_alerts"]
 
-    if state["avg_risk"] < 1 and buildups < 5:
+    # Спокойный рынок
+    if avg_risk < 1 and buildups == 0:
         return "CALM"
 
-    if buildups >= 5 and state["avg_risk"] < 2:
+    # Латентный стресс: высокий фон, но без концентрации и событий
+    if avg_risk >= 2 and buildups == 0 and alerts == 0:
+        return "LATENT_STRESS"
+
+    # Концентрация риска без взрыва
+    if buildups >= 3 and avg_risk < 2:
         return "CROWD_IMBALANCE"
 
-    if state["avg_risk"] >= 2:
+    # Активный стресс: и фон, и концентрация
+    if avg_risk >= 2 and buildups >= 3:
         return "STRESS"
 
     return "UNDEFINED"
@@ -292,13 +308,58 @@ async def global_risk_loop():
         now_ms = now_ts_ms()
     
         if now_ms - last_regime_ts >= MARKET_REGIME_INTERVAL * 1000:
+            global (
+                stress_confirm_counter,
+                stress_exit_counter,
+                crowd_confirm_counter,
+                current_market_regime
+            )
+        
             state = build_market_state()
-            regime = detect_market_regime(state)
+            candidate = detect_market_regime(state)
+
+            if candidate == "STRESS":
+                stress_confirm_counter += 1
+            else:
+                stress_confirm_counter = 0
+
+            if current_market_regime == "STRESS" and candidate != "STRESS":
+                stress_exit_counter += 1
+            else:
+                stress_exit_counter = 0
+
+            if candidate == "CROWD_IMBALANCE":
+                crowd_confirm_counter += 1
+            else:
+                crowd_confirm_counter = 0
+
+            if candidate == "STRESS":
+                if stress_confirm_counter >= STRESS_CONFIRM_TICKS:
+                    regime = "STRESS"
+                else:
+                    regime = "LATENT_STRESS"
         
+            elif current_market_regime == "STRESS":
+                if stress_exit_counter >= STRESS_EXIT_TICKS:
+                    regime = candidate
+                else:
+                    regime = "STRESS"
         
-            # логируем ВСЕГДА
+            elif candidate == "CROWD_IMBALANCE":
+                if crowd_confirm_counter >= CROWD_CONFIRM_TICKS:
+                    regime = "CROWD_IMBALANCE"
+                else:
+                    regime = "CALM"
+        
+            else:
+                regime = candidate
+
             log_event("market_regime", {
                 "regime": regime,
+                "candidate": candidate,
+                "stress_enter_ticks": stress_confirm_counter,
+                "stress_exit_ticks": stress_exit_counter,
+                "crowd_ticks": crowd_confirm_counter,
                 **state,
             })
         
@@ -697,7 +758,6 @@ async def regime_cmd(message: types.Message):
     regime = detect_market_regime(state)
 
     text = (
-        f"🌍 Market Regime: {regime}\n\n"
         f"Market metrics (last {ALERT_WINDOW_HOURS}h):\n"
         f"• Risk buildups: {state['risk_buildups']}\n"
         f"• Risk alerts: {state['risk_alerts']}\n"
@@ -706,6 +766,7 @@ async def regime_cmd(message: types.Message):
 
     text += (
         f"Snapshot:\n"
+        f"• Market Regime: {regime}\n\n"
         f"• Average risk: {state['avg_risk']}\n"
         f"• Long bias: {state['long_bias']}\n"
         f"• Short bias: {state['short_bias']}\n"
@@ -736,6 +797,13 @@ async def regime_cmd(message: types.Message):
             "Interpretation:\n"
             "Crowded positioning dominates.\n"
             "Asymmetric risk is building beneath the surface.\n"
+        )
+    elif regime == "LATENT_STRESS":
+        text += (
+            "Interpretation:\n"
+            "Background risk is elevated across the market.\n"
+            "No active crowd concentration detected.\n"
+            "Market is vulnerable, but still silent.\n"
         )
     elif regime == "STRESS":
         text += (
@@ -923,6 +991,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
