@@ -269,7 +269,7 @@ def detect_market_regime(state):
     if avg_risk >= 2 and buildups >= 3:
         return "STRESS"
 
-    return "UNDEFINED"
+    return "NEUTRAL"
 
 def detect_activity_regime_live():
     """
@@ -565,7 +565,7 @@ async def global_risk_loop():
         await asyncio.sleep(INTERVAL_SECONDS)
 
 def what_to_watch_now(regime, state):
-    if regime in ("CALM", "UNDEFINED"):
+    if regime in ("CALM", "NEUTRAL"):
         return [
             "Sudden increase in risk buildups across multiple symbols",
             "First funding or OI anomalies breaking the calm",
@@ -1022,4 +1022,5 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
