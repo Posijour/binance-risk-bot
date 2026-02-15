@@ -242,10 +242,12 @@ def build_market_state():
 
 
 def detect_market_regime(state):
-    if state["avg_risk"] < 1 and state["buildup_count"] < 5:
+    buildups = state["risk_buildups"]
+
+    if state["avg_risk"] < 1 and buildups < 5:
         return "CALM"
 
-    if state["buildup_count"] >= 5 and state["avg_risk"] < 2:
+    if buildups >= 5 and state["avg_risk"] < 2:
         return "CROWD_IMBALANCE"
 
     if state["avg_risk"] >= 2:
@@ -696,14 +698,15 @@ async def regime_cmd(message: types.Message):
 
     text = (
         f"🌍 Market Regime: {regime}\n\n"
-        f"Market metrics:\n"
+        f"Market metrics (last {ALERT_WINDOW_HOURS}h):\n"
         f"• Average risk: {state['avg_risk']}\n"
-        f"• Risk buildups (last 3h): {state['buildup_count']}\n"
+        f"• Risk buildups: {state['risk_buildups']}\n"
         f"• Risk alerts: {state['risk_alerts']}\n"
         f"• Long bias: {state['long_bias']}\n"
         f"• Short bias: {state['short_bias']}\n"
         f"• Symbols tracked: {state['symbols']}\n\n"
-    )
+        
+            )
 
     text += (
         f"Activity (last {activity['window_h']}h):\n"
@@ -922,6 +925,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
