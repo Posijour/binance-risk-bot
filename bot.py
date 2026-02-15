@@ -374,6 +374,7 @@ async def global_risk_loop():
                     last_activity_transition = {
                         "from": last_activity_regime,
                         "to": activity["regime"],
+                        "ts_unix_ms": now_ms,
                     }
         
                     log_event("activity_transition", {
@@ -519,6 +520,7 @@ async def global_risk_loop():
                         "confidence": confidence,
                         "type": "HARD",
                         "event_id": f"{symbol}:{now_ms}:HARD",
+                        "ts_unix_ms": now_ms,
                         "chat_id": "broadcast",
                         "risk_driver": risk_driver,
                         "price": price,
@@ -553,6 +555,7 @@ async def global_risk_loop():
                         "confidence": confidence,
                         "type": "BUILDUP",
                         "event_id": f"{symbol}:{now_ms}:BUILDUP",
+                        "ts_unix_ms": now_ms,
                         "chat_id": "broadcast",
                         "price": price,
                     }
@@ -1022,6 +1025,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
