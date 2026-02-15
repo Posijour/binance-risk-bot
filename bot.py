@@ -813,33 +813,33 @@ async def regime_cmd(message: types.Message):
     if regime == "CALM":
         text += (
             "Interpretation:\n"
-            "Systemic stress is low.\n"
-            "Crowd positioning appears balanced.\n"
+            "• Systemic stress is low.\n"
+            "• Crowd positioning appears balanced.\n"
         )
     elif regime == "CROWD_IMBALANCE":
         text += (
             "Interpretation:\n"
-            "Crowded positioning dominates.\n"
-            "Asymmetric risk is building beneath the surface.\n"
+            "• Crowded positioning dominates.\n"
+            "• Asymmetric risk is building beneath the surface.\n"
         )
     elif regime == "LATENT_STRESS":
         text += (
             "Interpretation:\n"
-            "Background risk is elevated across the market.\n"
-            "No active crowd concentration detected.\n"
-            "Market is vulnerable, but still silent.\n"
+            "• Background risk is elevated across the market.\n"
+            "• No active crowd concentration detected.\n"
+            "• Market is vulnerable, but still silent.\n"
         )
     elif regime == "STRESS":
         text += (
             "Interpretation:\n"
-            "Systemic stress is elevated.\n"
-            "Volatility expansion becomes more likely.\n"
+            "• Systemic stress is elevated.\n"
+            "• Volatility expansion becomes more likely.\n"
         )
     else:
         text += (
             "Interpretation:\n"
-            "Market conditions are mixed.\n"
-            "Signals lack clear alignment.\n"
+            "• Market conditions are mixed.\n"
+            "• Signals lack clear alignment.\n"
         )
 
     if watch_points:
@@ -1022,5 +1022,6 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
