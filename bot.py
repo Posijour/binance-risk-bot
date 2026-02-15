@@ -565,11 +565,12 @@ async def global_risk_loop():
         await asyncio.sleep(INTERVAL_SECONDS)
 
 def what_to_watch_now(regime, state):
-    if regime == "CALM":
+    if regime in ("CALM", "UNDEFINED"):
         return [
-            "Sudden increase in risk buildups",
-            "First funding or OI anomalies",
+            "Sudden increase in risk buildups across multiple symbols",
+            "First funding or OI anomalies breaking the calm",
         ]
+
 
     if regime == "LATENT_STRESS":
         return [
@@ -789,7 +790,7 @@ async def regime_cmd(message: types.Message):
 
     text += (
         f"Snapshot:\n"
-        f"• Market Regime: {regime}\n\n"
+        f"• Market Regime: {regime}\n"
         f"• Average risk: {state['avg_risk']}\n"
         f"• Long bias: {state['long_bias']}\n"
         f"• Short bias: {state['short_bias']}\n"
@@ -1021,3 +1022,4 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
