@@ -207,28 +207,36 @@ def build_market_snapshot(symbol):
 def build_market_state():
     risks = []
     directions = []
-    buildups = 0
+
+    raw_buildups = 0
+    alert_buildups = 0
+
+    now_ms = now_ts_ms()
+    cutoff = now_ms - ALERT_WINDOW_HOURS * 3600 * 1000
 
     for symbol, data in cache.items():
         score, direction = data[0], data[1]
+
         if score is not None:
             risks.append(score)
+
         if direction:
             directions.append(direction)
 
+        if score is not None and score >= EARLY_ALERT_LEVEL:
+            raw_buildups += 1
+
     for q in alert_history.values():
-        buildups += len(q)
+        alert_buildups += sum(1 for ts in q if ts >= cutoff)
 
     avg_risk = sum(risks) / len(risks) if risks else 0
 
-    long_bias = directions.count("LONG")
-    short_bias = directions.count("SHORT")
-
     return {
         "avg_risk": round(avg_risk, 2),
-        "buildup_count": buildups,
-        "long_bias": long_bias,
-        "short_bias": short_bias,
+        "risk_buildups": raw_buildups,
+        "risk_alerts": alert_buildups,
+        "long_bias": directions.count("LONG"),
+        "short_bias": directions.count("SHORT"),
         "symbols": len(cache),
     }
 
@@ -656,7 +664,7 @@ async def risk_cmd(message: types.Message):
         
         text += (
             f"\nTicker activity:\n"
-            f"• Buildups (last {ALERT_WINDOW_HOURS}h): {alerts_last}\n\n"
+            f"• Alerts (last {ALERT_WINDOW_HOURS}h): {alerts_last}\n\n"
 
     
             )
@@ -691,6 +699,7 @@ async def regime_cmd(message: types.Message):
         f"Market metrics:\n"
         f"• Average risk: {state['avg_risk']}\n"
         f"• Risk buildups (last 3h): {state['buildup_count']}\n"
+        f"• Risk alerts: {state['risk_alerts']}\n"
         f"• Long bias: {state['long_bias']}\n"
         f"• Short bias: {state['short_bias']}\n"
         f"• Symbols tracked: {state['symbols']}\n\n"
@@ -913,6 +922,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
