@@ -569,6 +569,33 @@ async def global_risk_loop():
 
         await asyncio.sleep(INTERVAL_SECONDS)
 
+def what_to_watch(regime, state):
+    if regime == "CALM":
+        return [
+            "Sudden increase in risk buildups",
+            "First funding or OI anomalies",
+        ]
+
+    if regime == "LATENT_STRESS":
+        return [
+            "Clustering of risk buildups on one side",
+            "Shift from background risk to crowd imbalance",
+        ]
+
+    if regime == "CROWD_IMBALANCE":
+        return [
+            "Escalation into systemic stress",
+            "Liquidation clusters confirming vulnerability",
+        ]
+
+    if regime == "STRESS":
+        return [
+            "Directional resolution via liquidations",
+            "Signs of stress unwinding or persistence",
+        ]
+
+    return []
+
 # ---------------- COMMANDS ----------------
 
 def ensure_chat(chat_id):
@@ -756,6 +783,7 @@ async def regime_cmd(message: types.Message):
     activity = detect_activity_regime_live()
     state = build_market_state()
     regime = detect_market_regime(state)
+    watch_points = what_to_watch_now(regime, state)
 
     text = (
         f"Market metrics (last {ALERT_WINDOW_HOURS}h):\n"
@@ -816,6 +844,13 @@ async def regime_cmd(message: types.Message):
             "Interpretation:\n"
             "Market conditions are mixed.\n"
             "Signals lack clear alignment.\n"
+        )
+
+    if watch_points:
+        text += (
+            "\nWhat to watch now:\n"
+            + "\n".join(f"• {p}" for p in watch_points)
+            + "\n"
         )
 
     text += "\nThis is a market risk observation, not a forecast."
@@ -991,6 +1026,7 @@ async def on_startup(dp):
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+
 
 
 
