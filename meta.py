@@ -24,9 +24,6 @@ def stream_quality(symbol):
     # Funding
     checks["funding"] = ws.funding.get(symbol) is not None
 
-    # Open Interest
-    checks["oi"] = len(ws.oi_window.get(symbol, [])) >= 2
-
     # Trades (long/short ratio)
     ls = ws.long_short_ratio.get(symbol)
     checks["trades"] = bool(ls and (ls["long"] + ls["short"]) > 0)
@@ -53,33 +50,6 @@ def stream_quality(symbol):
         "level": level,
         "checks": checks
     }
-
-
-# =========================
-# STATE
-# =========================
-
-def detect_state(score, oi_spike, funding_spike, liquidations):
-    """
-    Определяет режим рынка.
-    НЕ влияет на risk score.
-    """
-
-    if score < 3:
-        return "CALM"
-
-    if score < 6:
-        if liquidations > 0:
-            return "UNWIND"
-        return "BUILDUP"
-
-    if score >= 6 and oi_spike:
-        if funding_spike and liquidations > 0:
-            return "CHAOTIC"
-        return "OVERHEATED"
-
-    return "BUILDUP"
-
 
 # =========================
 # CONFIDENCE
