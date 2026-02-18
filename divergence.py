@@ -59,8 +59,8 @@ def detect_divergence(
 
     # 🔻 LONG TRAP
     if (
-        state != "CALM"
-        and pressure > 0.6
+        state in ("LATENT_STRESS", "NEUTRAL", "CROWD_IMBALANCE", "STRESS")
+        and pressure > 0.65
         and oi_trend == "UP"
         and price_trend in ("FLAT", "DOWN")
     ):
@@ -72,8 +72,8 @@ def detect_divergence(
 
     # 🔺 SHORT SQUEEZE
     if (
-        state in ("BUILDUP", "OVERHEATED")
-        and pressure > 0.6
+        state in ("CROWD_IMBALANCE", "STRESS")
+        and pressure > 0.7
         and oi_trend == "UP"
         and liquidations > 0
     ):
@@ -85,9 +85,10 @@ def detect_divergence(
 
     # 🔻 FAKE MOVE
     if (
-        state in ("BUILDUP", "OVERHEATED")
-        and pressure > 0.6
+        state in ("LATENT_STRESS", "NEUTRAL", "CROWD_IMBALANCE", "STRESS")
+        and pressure > 0.7
         and oi_trend == "DOWN"
+        and price_trend in ("UP", "FLAT")
     ):
         if _cooldown_ok(symbol, "FAKE_MOVE"):
             divergences.append(
@@ -97,8 +98,8 @@ def detect_divergence(
 
     # 🧨 CAPITULATION
     if (
-        state == "UNWIND"
-        and pressure < 0.4
+        state == "STRESS"
+        and pressure < 0.35
         and oi_trend == "DOWN"
         and liquidations > 0
     ):
