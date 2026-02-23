@@ -346,6 +346,15 @@ async def global_risk_loop():
                     last_oi_snapshot[symbol] = oi_vals[-1][1]
 
                 liq = ws.liquidations.get(symbol, 0)
+                log_event(
+                    "liq_debug",
+                    {
+                        "symbol": symbol,
+                        "liq": liq,
+                        "liq_thresh": LIQ_THRESHOLDS[symbol],
+                        "liq_sides": ws.liq_sides.get(symbol, {}),
+                    }
+                )
                 ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
                 total = ls["long"] + ls["short"]
                 pressure_ratio = ls["long"] / total if total else 0.5
@@ -471,8 +480,9 @@ async def global_risk_loop():
                     liquidations=liq,
                 )
 
-                for idx, div_text in enumerate(divergences):
+                for div_text in divergences:
                     divergence_type = divergence_type_from_message(div_text)
+                
                     confidence = divergence_confidence(
                         pressure_ratio=pressure_ratio,
                         liq=liq,
@@ -480,13 +490,22 @@ async def global_risk_loop():
                         oi_trend=oi_trend,
                         score=score,
                     )
-
+                
+                    if confidence < 0.65:
+                        continue
+                
+                    if last_activity_regime == "CALM" and confidence < 0.8:
+                        continue
+                
+                    bucket = now_ms // (15 * 60 * 1000)
+                    event_id = f"{symbol}:DIV:{divergence_type}:{bucket}"
+                
                     emit_alert(
                         f"🧭 DIVERGENCE {symbol}\n\n{div_text}",
                         {
                             "symbol": symbol,
                             "type": "DIVERGENCE",
-                            "event_id": f"{symbol}:{now_ms}:DIV:{idx}",
+                            "event_id": event_id,
                             "ts_unix_ms": now_ms,
                             "market_regime": current_market_regime,
                             "price_trend": price_trend,
@@ -495,10 +514,8 @@ async def global_risk_loop():
                             "price": price,
                             "divergence_type": divergence_type,
                             "confidence": confidence,
-                            "pressure": round(pressure_ratio, 4),
                             "oi_trend": oi_trend,
                             "liquidations": liq,
-                            "message": div_text,
                         },
                         event_type="risk_divergence",
                     )
@@ -564,6 +581,7 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
+
 
 
 
