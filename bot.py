@@ -503,6 +503,7 @@ async def global_risk_loop():
                     confidence = divergence_confidence(
                         pressure_ratio=pressure_ratio,
                         liq=liq,
+                        liq_threshold=LIQ_THRESHOLDS[symbol],
                         price_trend=price_trend,
                         oi_trend=oi_trend,
                         score=score,
@@ -598,6 +599,7 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
+
 
 
 
