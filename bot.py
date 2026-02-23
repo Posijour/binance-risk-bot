@@ -196,20 +196,37 @@ def divergence_type_from_message(div_text):
     return div_text.split("—", 1)[0].strip().replace(" ", "_")
 
 
-def divergence_confidence(pressure_ratio, liq, price_trend, oi_trend, score):
+def divergence_confidence(
+    pressure_ratio,
+    liq,
+    liq_threshold,
+    price_trend,
+    oi_trend,
+    score,
+):
     confidence = 0.4
 
+    # --- pressure ---
     if pressure_ratio >= 0.75 or pressure_ratio <= 0.3:
         confidence += 0.2
     elif pressure_ratio >= 0.65 or pressure_ratio <= 0.35:
         confidence += 0.1
 
-    if liq > 0:
-        confidence += 0.1
+    # --- liquidations: отношение к порогу ---
+    if liq_threshold and liq > 0:
+        liq_ratio = liq / liq_threshold
+        if liq_ratio >= 1.0:
+            confidence += 0.2
+        elif liq_ratio >= 0.5:
+            confidence += 0.1
+
+    # --- trends ---
     if oi_trend != "FLAT":
         confidence += 0.1
     if price_trend != "FLAT":
         confidence += 0.05
+
+    # --- risk score ---
     if score >= HARD_ALERT_LEVEL:
         confidence += 0.15
     elif score >= EARLY_ALERT_LEVEL:
@@ -581,6 +598,7 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
+
 
 
 
