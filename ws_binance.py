@@ -104,6 +104,17 @@ async def binance_ws():
 
                         liq_notional = qty * liq_price
 
+                        log_event(
+                            "force_order_event",
+                            {
+                                "symbol": symbol,
+                                "liq_notional": round(liq_notional, 2),
+                                "side": side,
+                                "qty": qty,
+                                "price": liq_price,
+                            }
+                        )
+
                         liq_window[symbol].append((now, liq_notional, side))
                         liq_totals[symbol][side] += liq_notional
                         cleanup_liq(symbol)
@@ -129,5 +140,6 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
+
 
 
