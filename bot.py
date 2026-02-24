@@ -70,7 +70,8 @@ def record_alert_if_first(alert_meta):
 def emit_alert(text, alert_meta, event_type="alert_sent"):
     record_alert_if_first(alert_meta)
     payload = {"text": text, **(alert_meta or {})}
-    print(f"{event_type}: {payload}", flush=True)
+    if event_type not in {"alert_sent", "risk_divergence"}:
+        print(f"{event_type}: {payload}", flush=True)
     log_event(event_type, payload)
 
 
@@ -363,15 +364,6 @@ async def global_risk_loop():
                     last_oi_snapshot[symbol] = oi_vals[-1][1]
 
                 liq = ws.liquidations.get(symbol, 0)
-                log_event(
-                    "liq_debug",
-                    {
-                        "symbol": symbol,
-                        "liq": liq,
-                        "liq_thresh": LIQ_THRESHOLDS[symbol],
-                        "liq_sides": ws.liq_sides.get(symbol, {}),
-                    }
-                )
                 ls = ws.long_short_ratio.get(symbol, {"long": 0, "short": 0})
                 total = ls["long"] + ls["short"]
                 pressure_ratio = ls["long"] / total if total else 0.5
@@ -599,6 +591,7 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
+
 
 
 
