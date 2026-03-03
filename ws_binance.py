@@ -38,9 +38,21 @@ def cleanup_trades(symbol):
 def cleanup_liq(symbol):
     now = time.time()
     dq = liq_window[symbol]
+    removed = 0
     while dq and now - dq[0][0] > WINDOW_SECONDS:
         _, qty, side = dq.popleft()
         liq_totals[symbol][side] = max(0.0, liq_totals[symbol][side] - qty)
+        removed += 1
+    if removed:
+        print(
+            "liq_chain_cleanup: "
+            f"symbol={symbol} "
+            f"removed={removed} "
+            f"window_seconds={WINDOW_SECONDS} "
+            f"liq_long={round(liq_totals[symbol]['long'], 2)} "
+            f"liq_short={round(liq_totals[symbol]['short'], 2)}",
+            flush=True,
+        )
 
 async def binance_ws():
     streams = []
@@ -127,6 +139,16 @@ async def binance_ws():
                         liquidations[symbol] = (
                             liq_sides[symbol]["long"] + liq_sides[symbol]["short"]
                         )
+                        print(
+                            "liq_chain_ws: "
+                            f"symbol={symbol} "
+                            f"side={side} "
+                            f"event_notional={round(liq_notional, 2)} "
+                            f"liq_long={round(liq_sides[symbol]['long'], 2)} "
+                            f"liq_short={round(liq_sides[symbol]['short'], 2)} "
+                            f"liq_total={round(liquidations[symbol], 2)}",
+                            flush=True,
+                        )
                         last_force_order_ts[symbol] = int(now)
                         touch(symbol)
 
@@ -140,6 +162,3 @@ async def binance_ws():
             jitter = random.uniform(0.3, 1.3)
             await asyncio.sleep(backoff * jitter)
             backoff = min(backoff * 2, max_backoff)
-
-
-
