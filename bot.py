@@ -45,6 +45,8 @@ price_history = {s: deque(maxlen=3) for s in SYMBOLS}
 
 ws_task = None
 ws_running = False
+ws_stale_cycles = 0
+binance_degraded = False
 
 
 
@@ -237,15 +239,40 @@ def divergence_confidence(
 
 
 async def ws_watchdog():
-    global ws_task
+    global ws_task, ws_stale_cycles, binance_degraded
     while True:
         await asyncio.sleep(60)
 
-        if not ws.last_update:
-            continue
+        stale = False
+        freshest = None
 
-        freshest = max(ws.last_update.values())
-        if time.time() - freshest > 180:
+        if not ws.last_update:
+            stale = True
+        else:
+            freshest = max(ws.last_update.values())
+            stale = time.time() - freshest > 180
+
+        if stale:
+            ws_stale_cycles += 1
+
+            if ws_stale_cycles >= 3 and not binance_degraded:
+                degraded_text = (
+                    "⚠️ binance degraded\n\n"
+                    "Data channel is stale for 3 watchdog cycles"
+                )
+                emit_alert(
+                    degraded_text,
+                    {
+                        "symbol": "SYSTEM",
+                        "type": "BINANCE_DEGRADED",
+                        "event_id": f"SYSTEM:{now_ts_ms()}:BINANCE_DEGRADED",
+                        "ts_unix_ms": now_ts_ms(),
+                        "stale_cycles": ws_stale_cycles,
+                        "freshest_update_unix": freshest,
+                    },
+                )
+                binance_degraded = True
+
             if ws_task and not ws_task.done():
                 ws_task.cancel()
                 try:
@@ -253,6 +280,22 @@ async def ws_watchdog():
                 except asyncio.CancelledError:
                     pass
             ws_task = asyncio.create_task(start_ws_safe())
+            continue
+
+        ws_stale_cycles = 0
+        if binance_degraded:
+            recovered_text = "✅ binance recovered\n\nData channel updates resumed"
+            emit_alert(
+                recovered_text,
+                {
+                    "symbol": "SYSTEM",
+                    "type": "BINANCE_RECOVERED",
+                    "event_id": f"SYSTEM:{now_ts_ms()}:BINANCE_RECOVERED",
+                    "ts_unix_ms": now_ts_ms(),
+                    "freshest_update_unix": freshest,
+                },
+            )
+            binance_degraded = False
 
 
 cache = {}
@@ -370,6 +413,16 @@ async def global_risk_loop():
 
                 price = getattr(ws, "mark_price", {}).get(symbol)
                 liq_sides = getattr(ws, "liq_sides", {}).get(symbol, {})
+
+                if liq > 0 or liq_sides:
+                    print(
+                        "liq_chain_risk_loop: "
+                        f"symbol={symbol} "
+                        f"liq_total={round(liq, 2)} "
+                        f"liq_long={round(liq_sides.get('long', 0), 2)} "
+                        f"liq_short={round(liq_sides.get('short', 0), 2)}",
+                        flush=True,
+                    )
 
                 if price is not None:
                     price_history[symbol].append(price)
@@ -591,6 +644,7 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
+
 
 
 
