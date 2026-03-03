@@ -47,6 +47,10 @@ ws_task = None
 ws_running = False
 ws_stale_cycles = 0
 binance_degraded = False
+last_ws_restart_ts = 0
+WS_RESTART_COOLDOWN_SEC = 300
+THROTTLE_LOG_INTERVAL_SEC = 60
+throttle_registry = {}
 
 
 
@@ -69,11 +73,20 @@ def record_alert_if_first(alert_meta):
         alert_history[symbol].popleft()
 
 
+def throttled_stdout(key, text, interval_sec=THROTTLE_LOG_INTERVAL_SEC):
+    now = time.time()
+    last_ts = throttle_registry.get(key, 0)
+    if now - last_ts >= interval_sec:
+        print(text, flush=True)
+        throttle_registry[key] = now
+
+
 def emit_alert(text, alert_meta, event_type="alert_sent"):
     record_alert_if_first(alert_meta)
     payload = {"text": text, **(alert_meta or {})}
     if event_type not in {"alert_sent", "risk_divergence"}:
-        print(f"{event_type}: {payload}", flush=True)
+        event_key = payload.get("type", event_type)
+        throttled_stdout(f"alert:{event_key}", f"{event_type}: {payload}", interval_sec=60)
     log_event(event_type, payload)
 
 
@@ -239,7 +252,7 @@ def divergence_confidence(
 
 
 async def ws_watchdog():
-    global ws_task, ws_stale_cycles, binance_degraded
+    global ws_task, ws_stale_cycles, binance_degraded, last_ws_restart_ts
     while True:
         await asyncio.sleep(60)
 
@@ -255,7 +268,7 @@ async def ws_watchdog():
         if stale:
             ws_stale_cycles += 1
 
-            if ws_stale_cycles >= 3 and not binance_degraded:
+            if ws_stale_cycles == 3 and not binance_degraded:
                 degraded_text = (
                     "⚠️ binance degraded\n\n"
                     "Data channel is stale for 3 watchdog cycles"
@@ -273,13 +286,22 @@ async def ws_watchdog():
                 )
                 binance_degraded = True
 
-            if ws_task and not ws_task.done():
-                ws_task.cancel()
-                try:
-                    await ws_task
-                except asyncio.CancelledError:
-                    pass
-            ws_task = asyncio.create_task(start_ws_safe())
+            now_sec = time.time()
+            need_restart = (
+                ws_stale_cycles == 1
+                or ws_stale_cycles == 3
+                or (binance_degraded and now_sec - last_ws_restart_ts >= WS_RESTART_COOLDOWN_SEC)
+            )
+
+            if need_restart:
+                if ws_task and not ws_task.done():
+                    ws_task.cancel()
+                    try:
+                        await ws_task
+                    except asyncio.CancelledError:
+                        pass
+                ws_task = asyncio.create_task(start_ws_safe())
+                last_ws_restart_ts = now_sec
             continue
 
         ws_stale_cycles = 0
@@ -296,7 +318,6 @@ async def ws_watchdog():
                 },
             )
             binance_degraded = False
-
 
 cache = {}
 
@@ -627,6 +648,7 @@ async def oi_loop():
             oi_poller.update()
         except Exception as e:
             log_event("oi_poll_error", {"ts_unix_ms": now_ts_ms(), "error": str(e)})
+            throttled_stdout("oi_poll_error", f"OI ERROR: {e}", interval_sec=120)
         await asyncio.sleep(60)
 
 
@@ -644,11 +666,3 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=start_http, daemon=True).start()
     asyncio.run(main())
-
-
-
-
-
-
-
-
