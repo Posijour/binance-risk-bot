@@ -31,93 +31,105 @@ SYMBOL_CLASSES = {
 # Параметры дивергенций по классам
 CLASS_DIVERGENCE_PARAMS = {
     "L1": {
-        "long_trap_pressure": 0.68,
-        "short_squeeze_pressure": 0.74,
-        "fake_move_pressure": 0.74,
+        "long_trap_pressure": 0.71,
+        "short_squeeze_pressure": 0.76,
+        "fake_move_pressure": 0.77,
         "capitulation_pressure": 0.32,
-        "price_trend_delta": 0.0007,
-        "cooldown_multiplier": 1.2,
+        "price_trend_delta": 0.0008,
+        "cooldown_multiplier": 1.35,
     },
     "L2": {
-        "long_trap_pressure": 0.66,
-        "short_squeeze_pressure": 0.72,
-        "fake_move_pressure": 0.72,
+        "long_trap_pressure": 0.70,
+        "short_squeeze_pressure": 0.75,
+        "fake_move_pressure": 0.76,
         "capitulation_pressure": 0.34,
-        "price_trend_delta": 0.0010,
-        "cooldown_multiplier": 1.0,
+        "price_trend_delta": 0.0011,
+        "cooldown_multiplier": 1.20,
     },
     "L3": {
-        "long_trap_pressure": 0.65,
-        "short_squeeze_pressure": 0.71,
-        "fake_move_pressure": 0.71,
+        "long_trap_pressure": 0.69,
+        "short_squeeze_pressure": 0.74,
+        "fake_move_pressure": 0.76,
         "capitulation_pressure": 0.35,
-        "price_trend_delta": 0.0012,
-        "cooldown_multiplier": 0.95,
+        "price_trend_delta": 0.0014,
+        "cooldown_multiplier": 1.15,
     },
     "L4": {
-        "long_trap_pressure": 0.64,
-        "short_squeeze_pressure": 0.70,
-        "fake_move_pressure": 0.70,
+        "long_trap_pressure": 0.68,
+        "short_squeeze_pressure": 0.73,
+        "fake_move_pressure": 0.77,
         "capitulation_pressure": 0.36,
-        "price_trend_delta": 0.0015,
-        "cooldown_multiplier": 0.9,
+        "price_trend_delta": 0.0018,
+        "cooldown_multiplier": 1.10,
     },
 }
 
 SYMBOL_PARAM_OVERRIDES = {
     "ETHUSDT": {
-        "long_trap_pressure": 0.67,
-        "short_squeeze_pressure": 0.73,
-        "fake_move_pressure": 0.73,
+        "long_trap_pressure": 0.70,
+        "short_squeeze_pressure": 0.75,
+        "fake_move_pressure": 0.76,
         "capitulation_pressure": 0.33,
-        "cooldown_multiplier": 1.15,
+        "cooldown_multiplier": 1.25,
     },
     "DOGEUSDT": {
-        "price_trend_delta": 0.0010,
+        "price_trend_delta": 0.0011,
     },
     "ADAUSDT": {
-        "price_trend_delta": 0.0010,
+        "price_trend_delta": 0.0011,
     },
     "LINKUSDT": {
-        "price_trend_delta": 0.0010,
+        "price_trend_delta": 0.0011,
     },
     "LTCUSDT": {
-        "price_trend_delta": 0.0010,
+        "price_trend_delta": 0.0011,
     },
     "BCHUSDT": {
-        "price_trend_delta": 0.0010,
+        "price_trend_delta": 0.0011,
     },
     "SOLUSDT": {
-        "price_trend_delta": 0.0009,
+        "price_trend_delta": 0.0010,
     },
     "BNBUSDT": {
-        "price_trend_delta": 0.0011,
-        "cooldown_multiplier": 0.95,
+        "long_trap_pressure": 0.70,
+        "fake_move_pressure": 0.77,
+        "price_trend_delta": 0.0014,
+        "cooldown_multiplier": 1.20,
     },
     "TRXUSDT": {
-        "price_trend_delta": 0.0011,
-        "cooldown_multiplier": 0.95,
+        "long_trap_pressure": 0.71,
+        "fake_move_pressure": 0.78,
+        "price_trend_delta": 0.0015,
+        "cooldown_multiplier": 1.35,
     },
     "XRPUSDT": {
-        "price_trend_delta": 0.0012,
-        "cooldown_multiplier": 0.95,
+        "price_trend_delta": 0.0014,
+        "cooldown_multiplier": 1.10,
     },
     "XLMUSDT": {
-        "price_trend_delta": 0.0012,
-        "cooldown_multiplier": 0.95,
+        "long_trap_pressure": 0.70,
+        "fake_move_pressure": 0.78,
+        "price_trend_delta": 0.0015,
+        "cooldown_multiplier": 1.25,
     },
     "HBARUSDT": {
-        "price_trend_delta": 0.0014,
+        "long_trap_pressure": 0.69,
+        "fake_move_pressure": 0.78,
+        "price_trend_delta": 0.0017,
+        "cooldown_multiplier": 1.20,
     },
     "XMRUSDT": {
-        "price_trend_delta": 0.0014,
+        "price_trend_delta": 0.0017,
     },
     "ZECUSDT": {
-        "price_trend_delta": 0.0015,
+        "long_trap_pressure": 0.69,
+        "fake_move_pressure": 0.78,
+        "price_trend_delta": 0.0018,
+        "cooldown_multiplier": 1.20,
     },
     "HYPEUSDT": {
-        "price_trend_delta": 0.0016,
-        "cooldown_multiplier": 0.85,
+        "price_trend_delta": 0.0019,
+        "cooldown_multiplier": 1.05,
     },
 }
 
@@ -177,7 +189,7 @@ def detect_divergence(
 
     pressure = pressure_ratio
     params = get_divergence_params(symbol)
-    
+
     # ---------------- STATE-AWARE RULES ----------------
 
     # ❌ В CALM — ничего не показываем
@@ -186,14 +198,14 @@ def detect_divergence(
 
     # 🔻 LONG TRAP
     if (
-        state in ("LATENT_STRESS", "NEUTRAL", "CROWD_IMBALANCE", "STRESS")
+        state in ("CROWD_IMBALANCE", "STRESS")
         and pressure > params["long_trap_pressure"]
         and oi_trend == "UP"
-        and price_trend in ("FLAT", "DOWN")
+        and price_trend == "DOWN"
     ):
         if _cooldown_ok(symbol, "LONG_TRAP"):
             divergences.append(
-                "LONG TRAP — активные покупки, позиции растут, но цена не идёт. "
+                "LONG TRAP — активные покупки, позиции растут, но цена уже давится вниз. "
                 "Риск: покупатели могут остаться без продолжения движения."
             )
 
@@ -212,14 +224,14 @@ def detect_divergence(
 
     # 🔻 FAKE MOVE
     if (
-        state in ("LATENT_STRESS", "NEUTRAL", "CROWD_IMBALANCE", "STRESS")
+        state in ("CROWD_IMBALANCE", "STRESS")
         and pressure > params["fake_move_pressure"]
         and oi_trend == "DOWN"
-        and price_trend in ("UP", "FLAT")
+        and price_trend == "UP"
     ):
         if _cooldown_ok(symbol, "FAKE_MOVE"):
             divergences.append(
-                "FAKE MOVE — сделки есть, но позиции сокращаются. "
+                "FAKE MOVE — цена ещё идёт вверх, но позиции уже сокращаются. "
                 "Риск: движение не подтверждено интересом."
             )
 
