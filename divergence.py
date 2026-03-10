@@ -3,9 +3,12 @@ import time
 # Базовый cooldown в секундах по типам дивергенций
 BASE_DIVERGENCE_COOLDOWN = {
     "LONG_TRAP": 1800,        # 30 мин
+    "SHORT_TRAP": 1800,       # 30 мин
     "SHORT_SQUEEZE": 900,     # 15 мин
+    "LONG_SQUEEZE": 900,      # 15 мин
     "FAKE_MOVE": 1200,        # 20 мин
-    "CAPITULATION": 1800,
+    "FAKE_DUMP": 1200,        # 20 мин
+    "CAPITULATION": 1800,     # 30 мин
 }
 
 # Классы тикеров для дивергенций
@@ -32,32 +35,44 @@ SYMBOL_CLASSES = {
 CLASS_DIVERGENCE_PARAMS = {
     "L1": {
         "long_trap_pressure": 0.71,
+        "short_trap_sell_pressure": 0.71,
         "short_squeeze_pressure": 0.76,
+        "long_squeeze_sell_pressure": 0.76,
         "fake_move_pressure": 0.77,
+        "fake_dump_sell_pressure": 0.77,
         "capitulation_pressure": 0.32,
         "price_trend_delta": 0.0008,
         "cooldown_multiplier": 1.35,
     },
     "L2": {
         "long_trap_pressure": 0.70,
+        "short_trap_sell_pressure": 0.70,
         "short_squeeze_pressure": 0.75,
+        "long_squeeze_sell_pressure": 0.75,
         "fake_move_pressure": 0.76,
+        "fake_dump_sell_pressure": 0.76,
         "capitulation_pressure": 0.34,
         "price_trend_delta": 0.0011,
         "cooldown_multiplier": 1.20,
     },
     "L3": {
         "long_trap_pressure": 0.69,
+        "short_trap_sell_pressure": 0.69,
         "short_squeeze_pressure": 0.74,
+        "long_squeeze_sell_pressure": 0.74,
         "fake_move_pressure": 0.76,
+        "fake_dump_sell_pressure": 0.76,
         "capitulation_pressure": 0.35,
         "price_trend_delta": 0.0014,
         "cooldown_multiplier": 1.15,
     },
     "L4": {
         "long_trap_pressure": 0.68,
+        "short_trap_sell_pressure": 0.68,
         "short_squeeze_pressure": 0.73,
+        "long_squeeze_sell_pressure": 0.73,
         "fake_move_pressure": 0.77,
+        "fake_dump_sell_pressure": 0.77,
         "capitulation_pressure": 0.36,
         "price_trend_delta": 0.0018,
         "cooldown_multiplier": 1.10,
@@ -67,8 +82,11 @@ CLASS_DIVERGENCE_PARAMS = {
 SYMBOL_PARAM_OVERRIDES = {
     "ETHUSDT": {
         "long_trap_pressure": 0.70,
+        "short_trap_sell_pressure": 0.70,
         "short_squeeze_pressure": 0.75,
+        "long_squeeze_sell_pressure": 0.75,
         "fake_move_pressure": 0.76,
+        "fake_dump_sell_pressure": 0.76,
         "capitulation_pressure": 0.33,
         "cooldown_multiplier": 1.25,
     },
@@ -92,13 +110,17 @@ SYMBOL_PARAM_OVERRIDES = {
     },
     "BNBUSDT": {
         "long_trap_pressure": 0.70,
+        "short_trap_sell_pressure": 0.70,
         "fake_move_pressure": 0.77,
+        "fake_dump_sell_pressure": 0.77,
         "price_trend_delta": 0.0014,
         "cooldown_multiplier": 1.20,
     },
     "TRXUSDT": {
         "long_trap_pressure": 0.71,
+        "short_trap_sell_pressure": 0.71,
         "fake_move_pressure": 0.78,
+        "fake_dump_sell_pressure": 0.78,
         "price_trend_delta": 0.0015,
         "cooldown_multiplier": 1.35,
     },
@@ -108,13 +130,17 @@ SYMBOL_PARAM_OVERRIDES = {
     },
     "XLMUSDT": {
         "long_trap_pressure": 0.70,
+        "short_trap_sell_pressure": 0.70,
         "fake_move_pressure": 0.78,
+        "fake_dump_sell_pressure": 0.78,
         "price_trend_delta": 0.0015,
         "cooldown_multiplier": 1.25,
     },
     "HBARUSDT": {
         "long_trap_pressure": 0.69,
+        "short_trap_sell_pressure": 0.69,
         "fake_move_pressure": 0.78,
+        "fake_dump_sell_pressure": 0.78,
         "price_trend_delta": 0.0017,
         "cooldown_multiplier": 1.20,
     },
@@ -123,7 +149,9 @@ SYMBOL_PARAM_OVERRIDES = {
     },
     "ZECUSDT": {
         "long_trap_pressure": 0.69,
+        "short_trap_sell_pressure": 0.69,
         "fake_move_pressure": 0.78,
+        "fake_dump_sell_pressure": 0.78,
         "price_trend_delta": 0.0018,
         "cooldown_multiplier": 1.20,
     },
@@ -173,6 +201,9 @@ def detect_divergence(
     """
     WS-only divergence detection.
     Возвращает список human-readable строк.
+    Production version:
+    - без дублей
+    - с приоритетом более сильных событий
     """
 
     divergences = []
@@ -188,54 +219,49 @@ def detect_divergence(
             oi_trend = "DOWN"
 
     pressure = pressure_ratio
+    sell_pressure = 1.0 - pressure_ratio
     params = get_divergence_params(symbol)
 
     # ---------------- STATE-AWARE RULES ----------------
 
-    # ❌ В CALM — ничего не показываем
     if state == "CALM":
         return []
 
-    # 🔻 LONG TRAP
-    if (
-        state in ("CROWD_IMBALANCE", "STRESS")
-        and pressure > params["long_trap_pressure"]
-        and oi_trend == "UP"
-        and price_trend == "DOWN"
-    ):
-        if _cooldown_ok(symbol, "LONG_TRAP"):
-            divergences.append(
-                "LONG TRAP — активные покупки, позиции растут, но цена уже давится вниз. "
-                "Риск: покупатели могут остаться без продолжения движения."
-            )
+    # ---------------------------------------------------
+    # PRIORITY 1: squeeze / liquidation events
+    # ---------------------------------------------------
 
-    # 🔺 SHORT SQUEEZE
+    # SHORT SQUEEZE
     if (
         state in ("CROWD_IMBALANCE", "STRESS")
         and pressure > params["short_squeeze_pressure"]
         and oi_trend == "UP"
         and liquidations > 0
+        and price_trend == "UP"
     ):
         if _cooldown_ok(symbol, "SHORT_SQUEEZE"):
             divergences.append(
-                "SHORT SQUEEZE — агрессивные покупки при росте открытого интереса. "
-                "Риск: шорты могут быть вынуждены закрываться выше."
+                "SHORT SQUEEZE — агрессивные покупки при росте открытого интереса и движении цены вверх. "
+                "Риск: шорты могут быть вынуждены закрываться ещё выше."
             )
+        return divergences
 
-    # 🔻 FAKE MOVE
+    # LONG SQUEEZE
     if (
         state in ("CROWD_IMBALANCE", "STRESS")
-        and pressure > params["fake_move_pressure"]
-        and oi_trend == "DOWN"
-        and price_trend == "UP"
+        and sell_pressure > params["long_squeeze_sell_pressure"]
+        and oi_trend == "UP"
+        and liquidations > 0
+        and price_trend == "DOWN"
     ):
-        if _cooldown_ok(symbol, "FAKE_MOVE"):
+        if _cooldown_ok(symbol, "LONG_SQUEEZE"):
             divergences.append(
-                "FAKE MOVE — цена ещё идёт вверх, но позиции уже сокращаются. "
-                "Риск: движение не подтверждено интересом."
+                "LONG SQUEEZE — агрессивные продажи при росте открытого интереса и движении цены вниз. "
+                "Риск: лонги могут быть вынуждены закрываться ещё ниже."
             )
+        return divergences
 
-    # 🧨 CAPITULATION
+    # CAPITULATION
     if (
         state == "STRESS"
         and pressure < params["capitulation_pressure"]
@@ -247,5 +273,70 @@ def detect_divergence(
                 "CAPITULATION — закрытие позиций под давлением ликвидаций. "
                 "Риск: это выход, а не начало тренда."
             )
+        return divergences
+
+    # ---------------------------------------------------
+    # PRIORITY 2: trap events
+    # ---------------------------------------------------
+
+    # LONG TRAP
+    if (
+        state in ("CROWD_IMBALANCE", "STRESS")
+        and pressure > params["long_trap_pressure"]
+        and oi_trend == "UP"
+        and price_trend == "DOWN"
+    ):
+        if _cooldown_ok(symbol, "LONG_TRAP"):
+            divergences.append(
+                "LONG TRAP — активные покупки, позиции растут, но цена уже давится вниз. "
+                "Риск: покупатели могут остаться без продолжения движения."
+            )
+        return divergences
+
+    # SHORT TRAP
+    if (
+        state in ("CROWD_IMBALANCE", "STRESS")
+        and sell_pressure > params["short_trap_sell_pressure"]
+        and oi_trend == "UP"
+        and price_trend == "UP"
+    ):
+        if _cooldown_ok(symbol, "SHORT_TRAP"):
+            divergences.append(
+                "SHORT TRAP — активные продажи, позиции растут, но цена уже идёт вверх. "
+                "Риск: продавцы могут оказаться в ловушке против движения."
+            )
+        return divergences
+
+    # ---------------------------------------------------
+    # PRIORITY 3: fake continuation / exhaustion
+    # ---------------------------------------------------
+
+    # FAKE MOVE
+    if (
+        state in ("CROWD_IMBALANCE", "STRESS")
+        and pressure > params["fake_move_pressure"]
+        and oi_trend == "DOWN"
+        and price_trend == "UP"
+    ):
+        if _cooldown_ok(symbol, "FAKE_MOVE"):
+            divergences.append(
+                "FAKE MOVE — цена ещё идёт вверх, но позиции уже сокращаются. "
+                "Риск: движение не подтверждено интересом."
+            )
+        return divergences
+
+    # FAKE DUMP
+    if (
+        state in ("CROWD_IMBALANCE", "STRESS")
+        and sell_pressure > params["fake_dump_sell_pressure"]
+        and oi_trend == "DOWN"
+        and price_trend == "DOWN"
+    ):
+        if _cooldown_ok(symbol, "FAKE_DUMP"):
+            divergences.append(
+                "FAKE DUMP — цена ещё идёт вниз, но позиции уже сокращаются. "
+                "Риск: движение не подтверждено интересом и может быстро выдохнуться."
+            )
+        return divergences
 
     return divergences
