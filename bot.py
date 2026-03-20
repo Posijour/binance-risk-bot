@@ -22,9 +22,16 @@ ACTIVITY_FRAGILE_MAX = 5
 last_activity_regime = None
 
 ALERT_WINDOW_HOURS = 4
+ANOMALY_BURST_WINDOW_MS = 180_000
+ANOMALY_REPEATED_BUILDUP_MIN = 3
+ANOMALY_MULTI_COIN_MIN_EVENTS = 5
+ANOMALY_MULTI_COIN_MIN_SYMBOLS = 3
+ANOMALY_ALERT_COOLDOWN = 30 * 60
 alert_history = defaultdict(deque)
+buildup_history = deque()
 recorded_alert_ids = {}
 LAST_RISK_EVAL_TS = 0
+_LAST_ANOMALIES = {}
 
 MARKET_REGIME_INTERVAL = 900
 last_regime_ts = 0
@@ -88,6 +95,145 @@ def emit_alert(text, alert_meta, event_type="alert_sent"):
         event_key = payload.get("type", event_type)
         throttled_stdout(f"alert:{event_key}", f"{event_type}: {payload}", interval_sec=60)
     log_event(event_type, payload)
+
+
+def normalize_event_ts_ms(value):
+    if isinstance(value, str):
+        if value.isdigit():
+            value = int(value)
+        else:
+            return None
+
+    if isinstance(value, (int, float)):
+        value = int(value)
+        if value < 10_000_000_000:
+            value *= 1000
+        return value
+
+    return None
+
+
+def can_emit_anomaly(anomaly_key, event_ts):
+    event_ts = normalize_event_ts_ms(event_ts)
+    if event_ts is None:
+        return False
+
+    last_event_ts = _LAST_ANOMALIES.get(anomaly_key)
+    if last_event_ts and event_ts <= last_event_ts:
+        return False
+
+    if last_event_ts and (event_ts - last_event_ts) < ANOMALY_ALERT_COOLDOWN * 1000:
+        return False
+
+    _LAST_ANOMALIES[anomaly_key] = event_ts
+    return True
+
+
+def trim_buildup_history(now_ms):
+    cutoff = now_ms - ALERT_WINDOW_HOURS * 3600 * 1000
+    while buildup_history and buildup_history[0]["ts_ms"] < cutoff:
+        buildup_history.popleft()
+
+
+def register_buildup_event(alert_meta):
+    if not alert_meta or alert_meta.get("type") != "BUILDUP":
+        return
+
+    ts_ms = normalize_event_ts_ms(alert_meta.get("ts_unix_ms"))
+    symbol = alert_meta.get("symbol")
+    direction = alert_meta.get("direction")
+    if ts_ms is None or not symbol:
+        return
+
+    buildup_history.append({
+        "ts_ms": ts_ms,
+        "symbol": symbol,
+        "direction": direction,
+    })
+    trim_buildup_history(ts_ms)
+
+
+def detect_buildup_anomalies(now_ms):
+    trim_buildup_history(now_ms)
+    if not buildup_history:
+        return []
+
+    anomalies = []
+    per_symbol = defaultdict(int)
+    last_ts_by_symbol = {}
+
+    for row in buildup_history:
+        symbol = row["symbol"]
+        per_symbol[symbol] += 1
+        last_ts_by_symbol[symbol] = row["ts_ms"]
+
+    top_symbol = None
+    top_count = 0
+    for symbol, count in per_symbol.items():
+        if count > top_count:
+            top_symbol = symbol
+            top_count = count
+
+    if top_symbol and top_count >= ANOMALY_REPEATED_BUILDUP_MIN:
+        last_ts = last_ts_by_symbol[top_symbol]
+        anomalies.append({
+            "key": f"REPEATED_BUILDUP:{top_symbol}",
+            "event_ts": last_ts,
+            "symbol": top_symbol,
+            "anomaly_type": "REPEATED_BUILDUP",
+            "count": top_count,
+            "text": (
+                "⚠️ Futures anomaly detected\n"
+                f"{top_symbol} — repeated buildups\n"
+                f"Count: {top_count}"
+            ),
+        })
+
+    left = 0
+    rows = list(buildup_history)
+    for right in range(len(rows)):
+        while rows[right]["ts_ms"] - rows[left]["ts_ms"] > ANOMALY_BURST_WINDOW_MS:
+            left += 1
+
+        window = rows[left:right + 1]
+        if len(window) >= ANOMALY_MULTI_COIN_MIN_EVENTS:
+            distinct_symbols = {row["symbol"] for row in window}
+            if len(distinct_symbols) >= ANOMALY_MULTI_COIN_MIN_SYMBOLS:
+                anomalies.append({
+                    "key": "MULTI_COIN_BUILDUP_BURST",
+                    "event_ts": window[-1]["ts_ms"],
+                    "anomaly_type": "MULTI_COIN_BUILDUP_BURST",
+                    "count": len(window),
+                    "symbols": sorted(distinct_symbols),
+                    "text": (
+                        "⚠️ Futures anomaly detected\n"
+                        "Multi-coin buildup burst\n"
+                        f"Events: {len(window)} | Symbols: {len(distinct_symbols)}"
+                    ),
+                })
+                break
+
+    return anomalies
+
+
+def emit_detected_anomalies(now_ms):
+    for anomaly in detect_buildup_anomalies(now_ms):
+        if not can_emit_anomaly(anomaly["key"], anomaly["event_ts"]):
+            continue
+
+        emit_alert(
+            anomaly["text"],
+            {
+                "type": anomaly["anomaly_type"],
+                "event_id": f"anomaly:{anomaly['key']}:{anomaly['event_ts']}",
+                "ts_unix_ms": anomaly["event_ts"],
+                "symbol": anomaly.get("symbol"),
+                "anomaly_key": anomaly["key"],
+                "count": anomaly.get("count"),
+                "symbols": anomaly.get("symbols"),
+            },
+            event_type="anomaly",
+        )
 
 
 def detect_activity_regime_live():
@@ -538,19 +684,19 @@ async def global_risk_loop():
                     if conf_level in ("MEDIUM", "HIGH") and reasons:
                         text += f"\nConfidence: {conf_level}\nReason: {reasons[0]}"
 
-                    emit_alert(
-                        text,
-                        {
-                            "symbol": symbol,
-                            "risk": score,
-                            "direction": direction,
-                            "confidence": confidence,
-                            "type": "BUILDUP",
-                            "event_id": f"{symbol}:{now_ms}:BUILDUP",
-                            "ts_unix_ms": now_ms,
-                            "price": price,
-                        },
-                    )
+                    buildup_meta = {
+                        "symbol": symbol,
+                        "risk": score,
+                        "direction": direction,
+                        "confidence": confidence,
+                        "type": "BUILDUP",
+                        "event_id": f"{symbol}:{now_ms}:BUILDUP",
+                        "ts_unix_ms": now_ms,
+                        "price": price,
+                    }
+                    emit_alert(text, buildup_meta)
+                    register_buildup_event(buildup_meta)
+                    emit_detected_anomalies(now_ms)
 
                 price_trend = detect_price_trend(symbol, price_history[symbol])
                 oi_trend = detect_oi_trend(oi_for_risk)
